@@ -1,4 +1,0 @@
-project_id = "a2c-finanzas"
-
-[functions.admin-create-user]
-verify_jwt = true
