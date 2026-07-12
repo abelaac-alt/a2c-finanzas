@@ -372,7 +372,29 @@ function renderStats(){
 
 function bind(){
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;renderShell()});
-  document.querySelector('#logout')?.addEventListener('click',()=>sb.auth.signOut());
+  document.querySelector('#logout')?.addEventListener('click', async () => {
+    try {
+      const { error } = await sb.auth.signOut({ scope: 'local' });
+      if (error) throw error;
+
+      state.user = null;
+      state.profile = null;
+      state.profiles = [];
+      state.resources = [];
+      state.members = [];
+      state.invitations = [];
+      state.transactions = [];
+      state.notifications = [];
+      state.categories = [];
+      state.budgets = [];
+      state.recurring = [];
+
+      renderLogin();
+    } catch (error) {
+      console.error('Error al cerrar la sesión local:', error);
+      toast(`No se pudo cerrar la sesión: ${error.message}`, true);
+    }
+  });
   document.querySelector('#install-app')?.addEventListener('click',async()=>{
     if(!deferredInstallPrompt){toast('Usa el menú del navegador y selecciona “Instalar aplicación”.');return;}
     deferredInstallPrompt.prompt();
