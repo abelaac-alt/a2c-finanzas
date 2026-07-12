@@ -1,0 +1,4 @@
+window.A2C_CONFIG = {
+  SUPABASE_URL: 'https://TU-PROYECTO.supabase.co',
+  SUPABASE_ANON_KEY: 'TU_CLAVE_PUBLICA'
+};
