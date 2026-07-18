@@ -1,0 +1,8 @@
+[functions.secure-login]
+verify_jwt = false
+
+[functions.account-settings]
+verify_jwt = true
+
+[functions.admin-users]
+verify_jwt = true
