@@ -58,7 +58,18 @@ function bindRegistration(){
     button.disabled=true;button.dataset.label??=button.textContent;button.textContent='Creando cuenta…';
     try{
       const {data,error}=await client.functions.invoke('register-with-invite',{body:payload});
-      if(error||!data?.ok)throw new Error(data?.error||'No se pudo completar el registro.');
+      if(error){
+        let message=data?.error||'No se pudo completar el registro.';
+        try{
+          const response=error.context;
+          if(response instanceof Response){
+            const parsed=await response.clone().json();
+            if(parsed?.error)message=parsed.error;
+          }
+        }catch{}
+        throw new Error(message);
+      }
+      if(!data?.ok)throw new Error(data?.error||'No se pudo completar el registro.');
       document.querySelector('#app').innerHTML=`<section class="auth-shell"><div class="auth-card"><div class="brand"><img class="brand-logo brand-logo-login" src="./logo-a2c.png" alt="A2C Finanzas"><div><h1>Cuenta creada</h1><p class="muted">Ya puedes entrar en A2C Finanzas</p></div></div><div class="registration-success">El registro se ha completado correctamente para <strong>@${safeText(payload.username)}</strong>.</div><button class="btn primary full" id="go-login">Ir al inicio de sesión</button></div></section>`;
       document.querySelector('#go-login').onclick=showLogin;
     }catch(error){showToast(error.message||'No se pudo completar el registro.',true);button.disabled=false;button.textContent=button.dataset.label;}
