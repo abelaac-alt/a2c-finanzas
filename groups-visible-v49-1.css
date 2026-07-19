@@ -1,7 +1,0 @@
-
-.v47-tools-tabs .v47-tool-tab[data-v49-groups]::before,
-.v47-tools-tabs .v47-tool-tab[data-v47-groups]::before{
-  content:"👥"!important;
-  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;
-  font-size:22px!important;
-}
