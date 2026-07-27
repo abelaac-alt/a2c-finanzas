@@ -1,0 +1,44 @@
+
+/* A2C v66.3 — Centro de permisos */
+.permission-center{display:grid;gap:12px}
+.permission-intro,.permission-help{
+  padding:15px 16px;border-radius:16px;
+  background:linear-gradient(145deg,#f5f7ff,#eef8ff);
+  border:1px solid rgba(40,85,210,.10);
+}
+.permission-intro p,.permission-help p{margin:6px 0 0;color:var(--ink-3);line-height:1.55}
+.permission-card{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  gap:12px;align-items:center;
+  padding:15px;border-radius:18px;
+  background:#fff;border:1px solid rgba(35,42,96,.09);
+  box-shadow:0 9px 24px rgba(37,44,103,.07);
+}
+.permission-card .btn{grid-column:2/-1}
+.permission-icon{
+  display:grid;place-items:center;
+  width:46px;height:46px;border-radius:15px;
+  background:linear-gradient(145deg,#edf3ff,#ece8ff);
+  font-size:22px;
+}
+.permission-copy{display:grid;gap:3px}
+.permission-copy small{color:var(--ink-3);line-height:1.4}
+.permission-status{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:78px;padding:6px 9px;border-radius:999px;
+  font:700 8px var(--mono);letter-spacing:.6px;text-transform:uppercase;
+  background:#f1f2f6;color:#777d91;
+}
+.permission-status.is-granted{background:#e5faf2;color:#087758}
+.permission-status.is-denied{background:#fff0f2;color:#b93545}
+.permission-status.is-prompt{background:#fff6df;color:#9a6700}
+.permission-help{background:linear-gradient(145deg,#fff8e8,#fff)}
+.permission-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.admin-shortcut{color:#5b5cf6!important}
+@media(max-width:520px){
+  .permission-card{grid-template-columns:auto minmax(0,1fr)}
+  .permission-status{grid-column:2;justify-self:start}
+  .permission-card .btn{grid-column:1/-1}
+  .permission-actions{grid-template-columns:1fr}
+}
