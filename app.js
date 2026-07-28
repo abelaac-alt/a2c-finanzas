@@ -1496,7 +1496,8 @@ function openUserProfile(profileId){
 function openProfile(){
   modal(`<form id="profile-form"><div class="modal-head"><div><h2>Mi perfil</h2><p class="muted">${esc(state.profile.email)}</p></div><button type="button" class="close-btn" data-close>×</button></div>
     <div class="profile-photo-editor">${avatarMarkup(state.profile,'profile-avatar-large')}<div><label class="btn receipt-source-btn" for="avatar-file">Cambiar foto</label><input class="receipt-file-input" id="avatar-file" name="avatar" type="file" accept="image/*"><button type="button" class="text-btn ${state.profile.avatar_path?'':'hidden'}" id="remove-avatar">Eliminar foto</button><small class="muted" id="avatar-selection">Imagen cuadrada, comprimida automáticamente.</small></div></div>
-    <div class="field"><label>Nombre</label><input name="name" required minlength="2" maxlength="80" value="${esc(state.profile.display_name||'')}"></div><div class="field"><label>Nombre de usuario</label><div class="input-prefix"><span>@</span><input name="username" required minlength="3" maxlength="30" pattern="[a-z0-9._]+" value="${esc(state.profile.username||'')}" placeholder="abel.atero"></div><small class="muted">Solo minúsculas, números, punto y guion bajo.</small></div><div class="field"><label>Privacidad</label><select name="is_public"><option value="true" ${state.profile.is_public!==false?'selected':''}>Cuenta pública</option><option value="false" ${state.profile.is_public===false?'selected':''}>Cuenta privada</option></select></div><div class="field"><label>Nueva contraseña</label><input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password"></div><div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`);
+    <div class="field"><label>Nombre</label><input name="name" required minlength="2" maxlength="80" value="${esc(state.profile.display_name||'')}"></div><div class="field"><label>Nombre de usuario</label><div class="input-prefix"><span>@</span><input name="username" required minlength="3" maxlength="30" pattern="[a-z0-9._]+" value="${esc(state.profile.username||'')}" placeholder="abel.atero"></div><small class="muted">Solo minúsculas, números, punto y guion bajo.</small></div><div class="field"><label>Privacidad</label><select name="is_public"><option value="true" ${state.profile.is_public!==false?'selected':''}>Cuenta pública</option><option value="false" ${state.profile.is_public===false?'selected':''}>Cuenta privada</option></select></div><div class="field"><label>Nueva contraseña</label><input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password"></div>${window.A2CNative?`<div class="field"><label>Ajustes Android</label><button type="button" class="btn full" id="android-native-settings">Notificaciones, pagos y avisos</button></div>`:''}<div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`);
+  document.querySelector('#android-native-settings')?.addEventListener('click',()=>window.A2CNative?.openAndroidSettings());
   const form=document.querySelector('#profile-form'),fileInput=document.querySelector('#avatar-file'),selection=document.querySelector('#avatar-selection');let removeAvatar=false;
   fileInput.onchange=()=>{const f=fileInput.files?.[0];if(f){selection.textContent=f.name;removeAvatar=false;}};
   document.querySelector('#remove-avatar')?.addEventListener('click',()=>{removeAvatar=true;fileInput.value='';selection.textContent='La foto se eliminará al guardar.';});
@@ -1558,7 +1559,10 @@ window.a2cAndroidRegisterPayment = async function (payment) {
       amount_cents:amountCents,
       concept:merchant,
       occurred_on:occurredOn,
-      notes:noteTag
+      notes:noteTag,
+      fuel_liters:Number(payment?.fuel_liters)||null,
+      fuel_price_per_liter_milli:Number(payment?.fuel_price_per_liter_milli)||null,
+      fuel_consumption_l100km:null
     });
     if(error)return {ok:false,error:error.message};
     if(typeof refresh==='function')await refresh();
@@ -1566,4 +1570,13 @@ window.a2cAndroidRegisterPayment = async function (payment) {
   }catch(error){
     return {ok:false,error:error?.message||'No se pudo registrar la transacción.'};
   }
+};
+
+
+// Datos para widgets y avisos nativos Android 2.3.
+window.a2cAndroidGetNativeData = async function(){
+  if(!state?.user)return {error:'not_authenticated'};
+  const start=new Date();start.setDate(1);const monthStart=`${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-01`;
+  const monthExpenses=state.transactions.filter(t=>t.kind==='expense'&&String(t.occurred_on)>=monthStart).reduce((sum,t)=>sum+Number(t.amount_cents||0),0);
+  return {available_cents:mainBalance(),month_expenses_cents:monthExpenses,scheduled:(state.recurring||[]).filter(x=>x.active).map(x=>({id:x.id,concept:x.concept,amount_cents:x.amount_cents,next_run:x.next_run,active:x.active}))};
 };
