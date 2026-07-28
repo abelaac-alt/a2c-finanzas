@@ -28,7 +28,7 @@ const state = {
   user: null, profile: null, tab: 'home', socialSection: 'feed', toolsSection: 'piggy', statsSection: 'stats', legalFilters: {from:'',to:''},
   profiles: [], resources: [], members: [], invitations: [],
   transactions: [], notifications: [],
-  recurring: [], cryptoHoldings: [], cryptoLedger: [],
+  recurring: [], scheduledExpenses: [], cryptoHoldings: [], cryptoLedger: [],
   socialPosts: [], socialLikes: [], socialComments: [], friendships: [], follows: [], socialProfiles: [],
   expenseSplits: [], stockSales: [], leaderboard: [],
   filters: { query:'', kind:'', resourceId:'', resourceType:'', from:'', to:'' }
@@ -288,12 +288,17 @@ async function enter(){
 
   setTimeout(async()=>{
     try{
-      const {data,error}=await sb.rpc('a2c_process_my_scheduled_movements_v63');
-      if(error)throw error;
-      if(Number(data||0)>0){
+      const [transferRun,expenseRun]=await Promise.all([
+        sb.rpc('a2c_process_my_scheduled_movements_v63'),
+        sb.rpc('a2c_process_my_scheduled_expenses_v66')
+      ]);
+      if(transferRun.error)console.warn(transferRun.error);
+      if(expenseRun.error)console.warn(expenseRun.error);
+      const processed=Number(transferRun.data||0)+Number(expenseRun.data||0);
+      if(processed>0){
         await loadAll();
         renderShell();
-        toast(`${Number(data)} movimiento(s) programado(s) ejecutado(s).`);
+        toast(`${processed} movimiento(s) programado(s) ejecutado(s).`);
       }
     }catch(error){
       console.warn('Los movimientos programados no bloquearon la aplicación:',error);
@@ -309,6 +314,7 @@ async function loadAll(){
     sb.from('finance_transactions').select('*,resource:resources(id,name,type)').order('occurred_on',{ascending:false}).order('created_at',{ascending:false}),
     sb.from('notifications').select('*').order('created_at',{ascending:false}),
     sb.from('scheduled_movements_v63').select('*').order('next_run',{ascending:true}),
+    sb.from('scheduled_expenses_v66').select('*').order('next_run',{ascending:true}),
     sb.from('crypto_holdings').select('*,resource:resources(id,name,type)').order('symbol'),
     sb.from('crypto_ledger').select('*,source:resources!crypto_ledger_source_resource_id_fkey(id,name,type),destination:resources!crypto_ledger_destination_resource_id_fkey(id,name,type)').order('occurred_on',{ascending:false}).order('created_at',{ascending:false}),
     sb.from('friendships').select('*').or(`requester_id.eq.${state.user.id},addressee_id.eq.${state.user.id}`).order('created_at',{ascending:false}),
@@ -332,13 +338,14 @@ async function loadAll(){
     state.transactions,
     state.notifications,
     state.recurring,
+    state.scheduledExpenses,
     state.cryptoHoldings,
     state.cryptoLedger,
     state.friendships,
     state.socialProfiles,
     state.expenseSplits,
     state.stockSales
-  ]=result.slice(0,12).map(row=>row.data||[]);
+  ]=result.slice(0,13).map(row=>row.data||[]);
 
   // Red social retirada: no se cargan publicaciones, imágenes, likes,
   // comentarios, seguidores ni clasificaciones.
@@ -356,13 +363,14 @@ async function loadAll(){
   });
 
   state.recurring=state.recurring.filter(row=>String(row.user_id)===String(state.user.id));
+  state.scheduledExpenses=state.scheduledExpenses.filter(row=>String(row.user_id)===String(state.user.id));
   state.notifications=state.notifications.filter(row=>String(row.user_id)===String(state.user.id));
   state.expenseSplits=state.expenseSplits.filter(row=>
     String(row.owner_id)===String(state.user.id)
     ||String(row.debtor_user_id)===String(state.user.id)
   );
 
-  state.profiles=isAdmin()?(result[12]?.data||[]):[];
+  state.profiles=isAdmin()?(result[13]?.data||[]):[];
 }
 async function refresh(render=true){await loadAll();if(render)renderShell()}
 
@@ -1312,6 +1320,7 @@ function scheduledPlaceLabel(type,id){
     return resource?.name||'Espacio';
   }
   if(type==='group')return 'Grupo';
+  if(type==='expense')return 'Gasto';
   return 'Destino';
 }
 function scheduledFrequencyLabel(row){
@@ -1322,19 +1331,26 @@ function scheduledFrequencyLabel(row){
   }
   return `Día ${row.day_of_month||1} de cada mes`;
 }
+function allScheduledRows(){
+  return [
+    ...state.recurring.map(row=>({...row,_schedule_kind:'transfer'})),
+    ...state.scheduledExpenses.map(row=>({...row,_schedule_kind:'expense'}))
+  ].sort((a,b)=>String(a.next_run||'').localeCompare(String(b.next_run||'')));
+}
 function openRecurring(){
+  const rows=allScheduledRows();
   modal(`<div class="modal-head">
-    <div><h2>Movimientos programados</h2><p class="muted">Automatiza transferencias entre tu cuenta principal y tus espacios.</p></div>
+    <div><h2>Movimientos programados</h2><p class="muted">Programa transferencias y gastos automáticos desde la cuenta que elijas.</p></div>
     <button class="close-btn" data-close>×</button>
   </div>
   <button class="btn primary full" id="new-recurring">Nuevo movimiento programado</button>
   <div class="scheduled-v63-list">
-    ${state.recurring.length?state.recurring.map(row=>`
+    ${rows.length?rows.map(row=>`
       <article class="scheduled-v63-card ${row.active?'':'is-paused'}">
         <div class="scheduled-v63-route">
-          <span>${esc(scheduledPlaceLabel(row.source_type,row.source_id))}</span>
+          <span>${esc(row._schedule_kind==='expense'?(row.source_resource_id?scheduledPlaceLabel('resource',row.source_resource_id):'Cuenta principal'):scheduledPlaceLabel(row.source_type,row.source_id))}</span>
           <b>→</b>
-          <span>${esc(scheduledPlaceLabel(row.destination_type,row.destination_id))}</span>
+          <span>${row._schedule_kind==='expense'?'Gasto':esc(scheduledPlaceLabel(row.destination_type,row.destination_id))}</span>
         </div>
         <div class="scheduled-v63-main">
           <div>
@@ -1344,65 +1360,57 @@ function openRecurring(){
           </div>
           <b>${money(row.amount_cents)}</b>
         </div>
-        <div class="scheduled-v63-status">${row.active?'Activo':'Pausado'}</div>
+        <div class="scheduled-v63-status">${row.active?'Activo':'Pausado'} · ${row._schedule_kind==='expense'?'Gasto':'Transferencia'}</div>
         <div class="scheduled-v63-actions">
-          <button class="btn" data-edit-scheduled="${row.id}">Editar</button>
-          <button class="btn danger" data-delete-scheduled="${row.id}">Borrar</button>
+          <button class="btn" data-edit-scheduled="${row._schedule_kind}:${row.id}">Editar</button>
+          <button class="btn danger" data-delete-scheduled="${row._schedule_kind}:${row.id}">Borrar</button>
         </div>
       </article>`).join(''):'<div class="empty compact">No hay movimientos programados.</div>'}
   </div>`,true);
 
   document.querySelector('#new-recurring').onclick=()=>openRecurringForm();
   document.querySelectorAll('[data-edit-scheduled]').forEach(button=>{
-    button.onclick=()=>openRecurringForm(state.recurring.find(row=>row.id===button.dataset.editScheduled));
+    button.onclick=()=>{
+      const [kind,id]=button.dataset.editScheduled.split(':');
+      const row=(kind==='expense'?state.scheduledExpenses:state.recurring).find(item=>String(item.id)===String(id));
+      openRecurringForm(row?{...row,_schedule_kind:kind}:null);
+    };
   });
   document.querySelectorAll('[data-delete-scheduled]').forEach(button=>{
     button.onclick=async()=>{
       if(!confirm('¿Borrar este movimiento programado?'))return;
-      const {error}=await sb.from('scheduled_movements_v63').delete().eq('id',button.dataset.deleteScheduled);
+      const [kind,id]=button.dataset.deleteScheduled.split(':');
+      const table=kind==='expense'?'scheduled_expenses_v66':'scheduled_movements_v63';
+      const {error}=await sb.from(table).delete().eq('id',id);
       if(error)return toast(error.message,true);
-      await refresh(false);
-      openRecurring();
-      toast('Movimiento programado eliminado');
+      await refresh(false);openRecurring();toast('Movimiento programado eliminado');
     };
   });
 }
 async function openRecurringForm(existing=null){
   const {data:places,error}=await sb.rpc('a2c_schedule_places_v63');
   if(error)return toast(error.message,true);
-
-  const allPlaces=[
-    {place_type:'main',place_id:null,place_label:'Cuenta principal'},
-    ...(places||[])
-  ];
+  const allPlaces=[{place_type:'main',place_id:null,place_label:'Cuenta principal'},...(places||[])];
+  const accountPlaces=allPlaces.filter(place=>place.place_type==='main'||place.place_type==='resource');
   const encoded=(type,id)=>`${type}:${id||''}`;
-  const options=allPlaces.map(place=>
-    `<option value="${encoded(place.place_type,place.place_id)}">${esc(place.place_label)}</option>`
-  ).join('');
+  const options=allPlaces.map(place=>`<option value="${encoded(place.place_type,place.place_id)}">${esc(place.place_label)}</option>`).join('');
+  const accountOptions=accountPlaces.map(place=>`<option value="${place.place_id||''}">${esc(place.place_label)}</option>`).join('');
+  const initialKind=existing?existing._schedule_kind||'transfer':'expense';
 
   modal(`<form id="scheduled-v63-form">
-    <div class="modal-head">
-      <div><h2>${existing?'Editar':'Nuevo'} movimiento programado</h2><p class="muted">Programa aportaciones o retiradas automáticas.</p></div>
-      <button type="button" class="close-btn" data-close>×</button>
+    <div class="modal-head"><div><h2>${existing?'Editar':'Nuevo'} movimiento programado</h2><p class="muted">Elige entre un gasto recurrente o una transferencia.</p></div><button type="button" class="close-btn" data-close>×</button></div>
+    <div class="field"><label>Tipo de movimiento</label><select name="schedule_kind"><option value="expense">Gasto programado</option><option value="transfer">Transferencia programada</option></select></div>
+    <div id="scheduled-expense-fields">
+      <div class="field"><label>Cuenta desde la que se paga</label><select name="expense_source">${accountOptions}</select></div>
     </div>
-    <div class="scheduled-v63-direction">
-      <div class="field"><label>Desde</label><select name="source">${options}</select></div>
-      <div class="scheduled-v63-arrow">→</div>
-      <div class="field"><label>Hacia</label><select name="destination">${options}</select></div>
+    <div class="scheduled-v63-direction" id="scheduled-transfer-fields">
+      <div class="field"><label>Desde</label><select name="source">${options}</select></div><div class="scheduled-v63-arrow">→</div><div class="field"><label>Hacia</label><select name="destination">${options}</select></div>
     </div>
     <div class="field"><label>Concepto</label><input name="concept" required maxlength="140" value="${esc(existing?.concept||'')}"></div>
     <div class="field"><label>Importe (€)</label><input name="amount" inputmode="decimal" required value="${existing?(Number(existing.amount_cents)/100).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):''}"></div>
-    <div class="form-grid">
-      <div class="field"><label>Frecuencia</label><select name="frequency">
-        <option value="monthly">Mensual</option>
-        <option value="weekly">Semanal</option>
-        <option value="daily">Diaria</option>
-      </select></div>
+    <div class="form-grid"><div class="field"><label>Frecuencia</label><select name="frequency"><option value="monthly">Mensual</option><option value="weekly">Semanal</option><option value="daily">Diaria</option></select></div>
       <div class="field" id="scheduled-v63-monthly"><label>Día del mes</label><input name="day_of_month" type="number" min="1" max="28" value="${existing?.day_of_month||1}"></div>
-      <div class="field hidden" id="scheduled-v63-weekly"><label>Día de la semana</label><select name="weekday">
-        <option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option>
-        <option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="0">Domingo</option>
-      </select></div>
+      <div class="field hidden" id="scheduled-v63-weekly"><label>Día de la semana</label><select name="weekday"><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="0">Domingo</option></select></div>
     </div>
     <div class="field"><label>Primera ejecución</label><input name="next_run" type="date" required value="${esc(existing?.next_run||today())}"></div>
     <label class="remember-login"><input name="active" type="checkbox" ${existing?.active===false?'':'checked'}><span>Programación activa</span></label>
@@ -1411,63 +1419,35 @@ async function openRecurringForm(existing=null){
 
   const form=document.querySelector('#scheduled-v63-form');
   const firstNonMain=allPlaces.find(place=>place.place_type!=='main');
+  form.elements.schedule_kind.value=initialKind;
   form.elements.source.value=encoded(existing?.source_type||'main',existing?.source_id||null);
-  form.elements.destination.value=encoded(
-    existing?.destination_type||firstNonMain?.place_type||'main',
-    existing?.destination_id||firstNonMain?.place_id||null
-  );
-  form.elements.frequency.value=existing?.frequency||'monthly';
-  form.elements.weekday.value=String(existing?.weekday??1);
-
-  const syncFrequency=()=>{
-    const frequency=form.elements.frequency.value;
-    document.querySelector('#scheduled-v63-monthly').classList.toggle('hidden',frequency!=='monthly');
-    document.querySelector('#scheduled-v63-weekly').classList.toggle('hidden',frequency!=='weekly');
-  };
-  form.elements.frequency.onchange=syncFrequency;
-  syncFrequency();
+  form.elements.destination.value=encoded(existing?.destination_type||firstNonMain?.place_type||'main',existing?.destination_id||firstNonMain?.place_id||null);
+  form.elements.expense_source.value=existing?.source_resource_id||'';
+  form.elements.frequency.value=existing?.frequency||'monthly';form.elements.weekday.value=String(existing?.weekday??1);
+  const syncType=()=>{const expense=form.elements.schedule_kind.value==='expense';document.querySelector('#scheduled-expense-fields').classList.toggle('hidden',!expense);document.querySelector('#scheduled-transfer-fields').classList.toggle('hidden',expense);};
+  const syncFrequency=()=>{const frequency=form.elements.frequency.value;document.querySelector('#scheduled-v63-monthly').classList.toggle('hidden',frequency!=='monthly');document.querySelector('#scheduled-v63-weekly').classList.toggle('hidden',frequency!=='weekly');};
+  form.elements.schedule_kind.onchange=syncType;form.elements.frequency.onchange=syncFrequency;syncType();syncFrequency();
 
   form.onsubmit=async event=>{
-    event.preventDefault();
-    const button=event.submitter;
-    const fd=new FormData(form);
-    const [sourceType,sourceId]=String(fd.get('source')).split(':');
-    const [destinationType,destinationId]=String(fd.get('destination')).split(':');
-
-    if(sourceType===destinationType&&String(sourceId||'')===String(destinationId||'')){
-      return toast('El origen y el destino no pueden ser iguales.',true);
+    event.preventDefault();const button=event.submitter,fd=new FormData(form),kind=String(fd.get('schedule_kind'));
+    const common={user_id:state.user.id,concept:String(fd.get('concept')||'').trim(),amount_cents:cents(fd.get('amount')),frequency:String(fd.get('frequency')),day_of_month:fd.get('frequency')==='monthly'?Number(fd.get('day_of_month')||1):null,weekday:fd.get('frequency')==='weekly'?Number(fd.get('weekday')||1):null,next_run:String(fd.get('next_run')),active:fd.get('active')==='on',updated_at:new Date().toISOString()};
+    if(!common.concept||common.amount_cents<=0)return toast('Indica un concepto y un importe válido.',true);
+    busy(button,true);let result;
+    if(kind==='expense'){
+      const payload={...common,source_resource_id:String(fd.get('expense_source')||'')||null,payment_method:'bank'};
+      if(existing&&existing._schedule_kind==='expense')result=await sb.from('scheduled_expenses_v66').update(payload).eq('id',existing.id);
+      else result=await sb.from('scheduled_expenses_v66').insert(payload);
+      if(!result.error&&existing&&existing._schedule_kind==='transfer')await sb.from('scheduled_movements_v63').delete().eq('id',existing.id);
+    }else{
+      const [sourceType,sourceId]=String(fd.get('source')).split(':'),[destinationType,destinationId]=String(fd.get('destination')).split(':');
+      if(sourceType===destinationType&&String(sourceId||'')===String(destinationId||'')){busy(button,false);return toast('El origen y el destino no pueden ser iguales.',true);}
+      if(sourceType!=='main'&&destinationType!=='main'){busy(button,false);return toast('Uno de los dos extremos debe ser la cuenta principal.',true);}
+      const payload={...common,source_type:sourceType,source_id:sourceId||null,destination_type:destinationType,destination_id:destinationId||null};
+      if(existing&&existing._schedule_kind==='transfer')result=await sb.from('scheduled_movements_v63').update(payload).eq('id',existing.id);
+      else result=await sb.from('scheduled_movements_v63').insert(payload);
+      if(!result.error&&existing&&existing._schedule_kind==='expense')await sb.from('scheduled_expenses_v66').delete().eq('id',existing.id);
     }
-    if(sourceType!=='main'&&destinationType!=='main'){
-      return toast('Uno de los dos extremos debe ser la cuenta principal.',true);
-    }
-
-    const payload={
-      user_id:state.user.id,
-      source_type:sourceType,
-      source_id:sourceId||null,
-      destination_type:destinationType,
-      destination_id:destinationId||null,
-      concept:String(fd.get('concept')||'').trim(),
-      amount_cents:cents(fd.get('amount')),
-      frequency:String(fd.get('frequency')),
-      day_of_month:fd.get('frequency')==='monthly'?Number(fd.get('day_of_month')||1):null,
-      weekday:fd.get('frequency')==='weekly'?Number(fd.get('weekday')||1):null,
-      next_run:String(fd.get('next_run')),
-      active:fd.get('active')==='on',
-      updated_at:new Date().toISOString()
-    };
-
-    busy(button,true);
-    const result=existing
-      ?await sb.from('scheduled_movements_v63').update(payload).eq('id',existing.id)
-      :await sb.from('scheduled_movements_v63').insert(payload);
-    busy(button,false);
-
-    if(result.error)return toast(result.error.message,true);
-    closeModal();
-    await refresh(false);
-    openRecurring();
-    toast(existing?'Programación actualizada':'Movimiento programado creado');
+    busy(button,false);if(result.error)return toast(result.error.message,true);closeModal();await refresh(false);openRecurring();toast(existing?'Programación actualizada':'Movimiento programado creado');
   };
 }
 async function openReceipt(path){
@@ -1578,43 +1558,28 @@ window.a2cAndroidGetNativeData = async function(){
   try{
     const {data:{user},error:userError}=await sb.auth.getUser();
     if(userError||!user)return {error:'not_authenticated'};
-
-    const [txResult,scheduledResult]=await Promise.all([
-      sb.from('finance_transactions')
-        .select('amount_cents,kind,occurred_on,resource_id,payment_method,is_transfer,transfer_role,resource:resources(type)'),
-      sb.from('scheduled_movements_v63')
-        .select('id,user_id,concept,amount_cents,next_run,active')
-        .eq('user_id',user.id)
-        .eq('active',true)
-        .order('next_run',{ascending:true})
+    const now=new Date(),monthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const since30=new Date(now);since30.setDate(since30.getDate()-29);const since30Key=since30.toISOString().slice(0,10);
+    const [txResult,scheduledResult,scheduledExpenseResult]=await Promise.all([
+      sb.from('finance_transactions').select('amount_cents,kind,occurred_on,resource_id,payment_method,is_transfer,transfer_role,fuel_liters,fuel_price_per_liter_milli,resource:resources(type)'),
+      sb.from('scheduled_movements_v63').select('id,user_id,concept,amount_cents,next_run,active').eq('user_id',user.id).eq('active',true).order('next_run',{ascending:true}),
+      sb.from('scheduled_expenses_v66').select('id,user_id,concept,amount_cents,next_run,active').eq('user_id',user.id).eq('active',true).order('next_run',{ascending:true})
     ]);
-
     if(txResult.error)return {error:txResult.error.message,retry:true};
-
-    const transactions=(txResult.data||[]).filter(row=>{
-      if(row?.is_transfer&&row?.transfer_role==='destination')return false;
-      return true;
-    });
-
-    const available=transactions
-      .filter(row=>{
-        if(row?.payment_method==='crypto')return false;
-        return !row?.resource_id||row?.resource?.type==='folder';
-      })
-      .reduce((sum,row)=>sum+(row.kind==='income'?Number(row.amount_cents||0):-Number(row.amount_cents||0)),0);
-
-    const now=new Date();
-    const monthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-    const monthExpenses=transactions
-      .filter(row=>row.kind==='expense'&&String(row.occurred_on||'').startsWith(monthKey))
-      .reduce((sum,row)=>sum+Number(row.amount_cents||0),0);
-
-    const scheduled=scheduledResult.error?[]:(scheduledResult.data||[]).map(row=>({
-      id:row.id,concept:row.concept,amount_cents:row.amount_cents,next_run:row.next_run,active:row.active
-    }));
-
-    return {available_cents:available,month_expenses_cents:monthExpenses,scheduled};
-  }catch(error){
-    return {error:error?.message||'sync_failed',retry:true};
-  }
+    const transactions=(txResult.data||[]).filter(row=>!(row?.is_transfer&&row?.transfer_role==='destination'));
+    const available=transactions.filter(row=>row?.payment_method!=='crypto'&&(!row?.resource_id||row?.resource?.type==='folder')).reduce((sum,row)=>sum+(row.kind==='income'?Number(row.amount_cents||0):-Number(row.amount_cents||0)),0);
+    const monthRows=transactions.filter(row=>String(row.occurred_on||'').startsWith(monthKey));
+    const totals={income:0,expense:0,saving:0,investment:0};
+    monthRows.forEach(row=>{if(Object.prototype.hasOwnProperty.call(totals,row.kind))totals[row.kind]+=Number(row.amount_cents||0);});
+    const fuelRows=transactions.filter(row=>row.kind==='expense'&&String(row.occurred_on||'')>=since30Key&&Number(row.fuel_liters)>0);
+    const fuelLiters=fuelRows.reduce((sum,row)=>sum+Number(row.fuel_liters||0),0);
+    const fuelTotal=fuelRows.reduce((sum,row)=>sum+Number(row.amount_cents||0),0);
+    const weightedFuelCost=fuelRows.reduce((sum,row)=>sum+(Number(row.fuel_price_per_liter_milli||0)*Number(row.fuel_liters||0)),0);
+    const fuelAverageMilli=fuelLiters>0?Math.round(weightedFuelCost/fuelLiters):0;
+    const transferScheduled=scheduledResult.error?[]:(scheduledResult.data||[]);
+    const expenseScheduled=scheduledExpenseResult.error?[]:(scheduledExpenseResult.data||[]);
+    const scheduled=[...transferScheduled,...expenseScheduled].map(row=>({id:row.id,concept:row.concept,amount_cents:row.amount_cents,next_run:row.next_run,active:row.active})).sort((a,b)=>String(a.next_run).localeCompare(String(b.next_run))).slice(0,6);
+    return {available_cents:available,month_income_cents:totals.income,month_expenses_cents:totals.expense,month_saving_cents:totals.saving,month_investment_cents:totals.investment,fuel_30d_liters:fuelLiters,fuel_30d_total_cents:fuelTotal,fuel_30d_average_milli:fuelAverageMilli,scheduled};
+  }catch(error){return {error:error?.message||'sync_failed',retry:true};}
 };
+
