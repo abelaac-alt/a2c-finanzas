@@ -69,12 +69,33 @@ function enhanceToolsMenu(){
 
   nav.classList.add('v47-tools-tabs');
 
-  const labels=['Huchas','Carpetas','Objetivos'];
+  if(!document.querySelector('#a2c-budget-tab-persistent-style')){
+    const style=document.createElement('style');
+    style.id='a2c-budget-tab-persistent-style';
+    style.textContent=`
+      .v47-tools-tabs .v47-tool-tab[data-tools-section="budget"]::before,
+      .v47-tools-tabs .v47-tool-tab[data-v47-icon="budget"]::before{
+        content:""!important;
+        width:24px!important;
+        height:24px!important;
+        display:block!important;
+        background-color:currentColor!important;
+        -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='3' width='14' height='18' rx='3'/%3E%3Cpath d='M9 8h6M9 12h6M9 16h4M8 3v3M12 3v3M16 3v3'/%3E%3C/g%3E%3C/svg%3E") center/contain no-repeat!important;
+        mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='3' width='14' height='18' rx='3'/%3E%3Cpath d='M9 8h6M9 12h6M9 16h4M8 3v3M12 3v3M16 3v3'/%3E%3C/g%3E%3C/svg%3E") center/contain no-repeat!important;
+      }
+      .v47-tools-tabs .v47-tool-tab[data-tools-section="budget"]{gap:7px!important}
+    `;
+    document.head.appendChild(style);
+  }
+
+  const iconBySection={piggy:'piggy',folder:'folder',goal:'goal',budget:'budget'};
+  const labelBySection={piggy:'Huchas',folder:'Carpetas',goal:'Objetivos',budget:'Presupuestos'};
   [...nav.querySelectorAll('button')].forEach((button,index)=>{
     if(button.matches('[data-v47-groups],[data-v49-groups],[data-v49-groups-visible]'))return;
     button.classList.add('v47-tool-tab');
-    button.dataset.v47Icon=['piggy','folder','goal'][index]||'tool';
-    if(labels[index])button.dataset.v47Label=labels[index];
+    const section=button.dataset.toolsSection||['piggy','folder','goal','budget'][index]||'tool';
+    button.dataset.v47Icon=iconBySection[section]||'tool';
+    button.dataset.v47Label=labelBySection[section]||button.textContent.trim();
   });
 
   const groupButtons=[...nav.querySelectorAll('[data-v47-groups],[data-v49-groups],[data-v49-groups-visible]')];
