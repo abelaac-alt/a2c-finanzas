@@ -413,8 +413,15 @@ function renderShell(){
 }
 function toolsTabs(){
   const tabs=[['piggy','Huchas'],['folder','Carpetas'],['goal','Objetivos'],['budget','Presupuestos']];
-  const budgetIcon='<svg class="budget-tab-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6M9 12h6M9 16h4M8 3v3M12 3v3M16 3v3"/></svg>';
-  return `<nav class="section-tabs" aria-label="Herramientas">${tabs.map(([key,label])=>`<button class="${state.toolsSection===key?'active':''}" data-tools-section="${key}">${key==='budget'?budgetIcon:''}<span>${label}</span></button>`).join('')}</nav>`;
+  const budgetMask="url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='3' width='14' height='18' rx='3'/%3E%3Cpath d='M9 8h6M9 12h6M9 16h4M8 3v3M12 3v3M16 3v3'/%3E%3C/g%3E%3C/svg%3E\")";
+  return `<style id="a2c-budget-tab-style">
+    .v47-tools-tabs .v47-tool-tab[data-tools-section="budget"]::before{
+      content:""!important;width:24px!important;height:24px!important;display:block!important;
+      background-color:currentColor!important;-webkit-mask:${budgetMask} center/contain no-repeat!important;
+      mask:${budgetMask} center/contain no-repeat!important;
+    }
+    .v47-tools-tabs .v47-tool-tab[data-tools-section="budget"]{gap:7px!important}
+  </style><nav class="section-tabs" aria-label="Herramientas">${tabs.map(([key,label])=>`<button class="${state.toolsSection===key?'active':''}" data-tools-section="${key}" ${key==='budget'?'data-v47-icon="budget" data-v47-label="Presupuestos"':''}><span>${label}</span></button>`).join('')}</nav>`;
 }
 function renderTools(){return `<section class="hub-page"><div class="dashboard-head"><div><span class="eyebrow">Organización</span><h1>Herramientas</h1><p class="muted">Gestiona huchas, carpetas, objetivos, presupuestos y movimientos automáticos.</p></div><div class="head-actions"><button type="button" class="btn primary" data-manage-recurring>Movimientos programados</button></div></div>${toolsTabs()}${state.toolsSection==='budget'?renderBudgets():renderResources(state.toolsSection)}</section>`;}
 
@@ -455,7 +462,7 @@ function renderBudgets(){
   const month=currentMonthKey(),rows=state.budgets.filter(row=>row.active!==false&&row.period_month===month);
   const total=rows.reduce((sum,row)=>sum+Number(row.amount_cents||0),0),spent=rows.reduce((sum,row)=>sum+budgetSpent(row),0),pct=total>0?Math.min(100,Math.round(spent/total*100)):0;
   return `<style>
-    .section-tabs [data-tools-section="budget"]{display:inline-flex;align-items:center;gap:7px}.budget-tab-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .section-tabs [data-tools-section="budget"]{display:inline-flex;align-items:center;gap:7px}
     .budget-overview{background:linear-gradient(135deg,#17131f,#34275c);color:#fff;border-radius:26px;padding:22px;margin-bottom:18px;box-shadow:0 16px 38px rgba(47,35,81,.18)}
     .budget-overview-top,.budget-card-head,.budget-numbers,.budget-foot{display:flex;align-items:center;justify-content:space-between;gap:12px}.budget-overview h2{margin:3px 0 0;font-size:28px}.budget-overview .muted{color:rgba(255,255,255,.68)}
     .budget-overview-track,.budget-progress{height:11px;background:rgba(255,255,255,.13);border-radius:999px;overflow:hidden;margin-top:16px}.budget-overview-track i,.budget-progress i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#7557ff,#9d83ff);transition:width .35s ease}.budget-overview-foot{display:flex;justify-content:space-between;margin-top:9px;font-size:12px;color:rgba(255,255,255,.72)}
