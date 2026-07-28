@@ -411,7 +411,11 @@ function renderShell(){
   </div>`;
   bind();
 }
-function toolsTabs(){const tabs=[['piggy','Huchas'],['folder','Carpetas'],['goal','Objetivos'],['budget','Presupuestos']];return `<nav class="section-tabs" aria-label="Herramientas">${tabs.map(([key,label])=>`<button class="${state.toolsSection===key?'active':''}" data-tools-section="${key}">${label}</button>`).join('')}</nav>`;}
+function toolsTabs(){
+  const tabs=[['piggy','Huchas'],['folder','Carpetas'],['goal','Objetivos'],['budget','Presupuestos']];
+  const budgetIcon='<svg class="budget-tab-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6M9 12h6M9 16h4M8 3v3M12 3v3M16 3v3"/></svg>';
+  return `<nav class="section-tabs" aria-label="Herramientas">${tabs.map(([key,label])=>`<button class="${state.toolsSection===key?'active':''}" data-tools-section="${key}">${key==='budget'?budgetIcon:''}<span>${label}</span></button>`).join('')}</nav>`;
+}
 function renderTools(){return `<section class="hub-page"><div class="dashboard-head"><div><span class="eyebrow">Organización</span><h1>Herramientas</h1><p class="muted">Gestiona huchas, carpetas, objetivos, presupuestos y movimientos automáticos.</p></div><div class="head-actions"><button type="button" class="btn primary" data-manage-recurring>Movimientos programados</button></div></div>${toolsTabs()}${state.toolsSection==='budget'?renderBudgets():renderResources(state.toolsSection)}</section>`;}
 
 const budgetCategoryMeta={
@@ -436,6 +440,7 @@ function detectBudgetCategory(tx){
 }
 function budgetMonthLabel(value){const [year,month]=String(value||currentMonthKey()).split('-').map(Number);return new Intl.DateTimeFormat('es-ES',{month:'long',year:'numeric'}).format(new Date(year,Math.max(0,month-1),1));}
 function budgetSpent(budget){return state.transactions.filter(tx=>tx.kind==='expense'&&String(tx.occurred_on||'').startsWith(budget.period_month)&&detectBudgetCategory(tx)===budget.category_key).reduce((sum,tx)=>sum+Number(tx.amount_cents||0),0);}
+function budgetSeriesId(budget){return String(budget?.series_id||budget?.id||'');}
 function budgetCard(budget){
   const spent=budgetSpent(budget),limit=Number(budget.amount_cents||0),remaining=Math.max(0,limit-spent),pct=limit>0?Math.min(100,Math.round(spent/limit*100)):0,meta=budgetCategoryMeta[budget.category_key]||budgetCategoryMeta.otros;
   const status=pct>=100?'exceeded':pct>=80?'warning':'healthy';
@@ -450,29 +455,63 @@ function renderBudgets(){
   const month=currentMonthKey(),rows=state.budgets.filter(row=>row.active!==false&&row.period_month===month);
   const total=rows.reduce((sum,row)=>sum+Number(row.amount_cents||0),0),spent=rows.reduce((sum,row)=>sum+budgetSpent(row),0),pct=total>0?Math.min(100,Math.round(spent/total*100)):0;
   return `<style>
+    .section-tabs [data-tools-section="budget"]{display:inline-flex;align-items:center;gap:7px}.budget-tab-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
     .budget-overview{background:linear-gradient(135deg,#17131f,#34275c);color:#fff;border-radius:26px;padding:22px;margin-bottom:18px;box-shadow:0 16px 38px rgba(47,35,81,.18)}
     .budget-overview-top,.budget-card-head,.budget-numbers,.budget-foot{display:flex;align-items:center;justify-content:space-between;gap:12px}.budget-overview h2{margin:3px 0 0;font-size:28px}.budget-overview .muted{color:rgba(255,255,255,.68)}
     .budget-overview-track,.budget-progress{height:11px;background:rgba(255,255,255,.13);border-radius:999px;overflow:hidden;margin-top:16px}.budget-overview-track i,.budget-progress i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#7557ff,#9d83ff);transition:width .35s ease}.budget-overview-foot{display:flex;justify-content:space-between;margin-top:9px;font-size:12px;color:rgba(255,255,255,.72)}
     .budget-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px}.budget-card{border:1px solid rgba(104,78,190,.10);box-shadow:0 12px 30px rgba(27,20,45,.07)}.budget-icon{width:46px;height:46px;border-radius:15px;background:linear-gradient(145deg,#f1edff,#e7fbf7);display:grid;place-items:center;font-size:22px}.budget-card-head>div:nth-child(2){flex:1}.budget-card-head h3{margin:0}.budget-card-head p{margin:3px 0 0}.budget-menu{font-size:22px}.budget-numbers{margin-top:20px}.budget-numbers strong{font-size:21px}.budget-numbers strong small{font-size:11px;font-weight:500;color:var(--muted)}.budget-numbers span{font-size:13px;color:var(--muted)}.budget-progress{height:10px;background:#edeaf3}.budget-card.warning .budget-progress i{background:linear-gradient(90deg,#efb145,#f08e4b)}.budget-card.exceeded .budget-progress i{background:linear-gradient(90deg,#dc4c4c,#ef7272)}.budget-foot{margin-top:8px;font-size:12px;color:var(--muted)}.budget-foot b{color:var(--text)}
     .budget-empty{padding:34px;text-align:center;border:1px dashed rgba(104,78,190,.25);border-radius:22px;background:rgba(255,255,255,.6)}
+    .budget-duration-note{padding:11px 13px;border-radius:14px;background:#f5f2ff;color:#5c489a;font-size:12px}
   </style><section class="budgets-page">
-    <div class="budget-overview"><div class="budget-overview-top"><div><span class="eyebrow">Presupuesto mensual</span><h2>${money(Math.max(0,total-spent))}</h2><p class="muted">Disponible de ${money(total)}</p></div><button type="button" class="btn primary" data-new-budget>Nuevo presupuesto</button></div><div class="budget-overview-track"><i style="width:${pct}%"></i></div><div class="budget-overview-foot"><span>${money(spent)} consumidos</span><span>${pct}%</span></div></div>
-    ${rows.length?`<div class="budget-grid">${rows.map(budgetCard).join('')}</div>`:`<div class="budget-empty"><h3>Crea tu primer presupuesto</h3><p class="muted">Define un límite mensual para alimentación, ocio, salud o combustible.</p><button class="btn primary" data-new-budget>Crear presupuesto</button></div>`}
+    <div class="budget-overview"><div class="budget-overview-top"><div><span class="eyebrow">Presupuesto del mes en curso</span><h2>${money(Math.max(0,total-spent))}</h2><p class="muted">Disponible de ${money(total)}</p></div><button type="button" class="btn primary" data-new-budget>Nuevo presupuesto</button></div><div class="budget-overview-track"><i style="width:${pct}%"></i></div><div class="budget-overview-foot"><span>${money(spent)} consumidos</span><span>${pct}%</span></div></div>
+    ${rows.length?`<div class="budget-grid">${rows.map(budgetCard).join('')}</div>`:`<div class="budget-empty"><h3>Crea tu primer presupuesto</h3><p class="muted">Define un límite para alimentación, ocio, salud o combustible durante uno o varios meses.</p><button class="btn primary" data-new-budget>Crear presupuesto</button></div>`}
   </section>`;
 }
 function openBudgetForm(existing=null){
-  const month=existing?.period_month||currentMonthKey(),category=existing?.category_key||'alimentacion';
-  modal(`<form id="budget-form"><div class="modal-head"><div><h2>${existing?'Editar':'Nuevo'} presupuesto</h2><p class="muted">Los gastos se clasifican automáticamente por su concepto o comercio.</p></div><button type="button" class="close-btn" data-close>×</button></div>
+  const month=existing?.start_month||existing?.period_month||currentMonthKey(),category=existing?.category_key||'alimentacion';
+  const seriesRows=existing?state.budgets.filter(row=>budgetSeriesId(row)===budgetSeriesId(existing)):[];
+  const defaultMonths=Math.max(1,Number(existing?.months_count||seriesRows.length||1));
+  modal(`<form id="budget-form"><div class="modal-head"><div><h2>${existing?'Editar':'Nuevo'} presupuesto</h2><p class="muted">Se guardará en tu cuenta y los gastos se clasificarán automáticamente.</p></div><button type="button" class="close-btn" data-close>×</button></div>
     <div class="field"><label>Nombre</label><input name="name" maxlength="80" required value="${esc(existing?.name||budgetCategoryMeta[category].label)}" placeholder="Presupuesto de alimentación"></div>
     <div class="field"><label>Categoría</label><select name="category_key">${Object.entries(budgetCategoryMeta).filter(([key])=>key!=='otros').map(([key,meta])=>`<option value="${key}" ${key===category?'selected':''}>${meta.icon} ${meta.label}</option>`).join('')}</select></div>
-    <div class="field"><label>Importe máximo</label><input name="amount" inputmode="decimal" required value="${existing?(Number(existing.amount_cents||0)/100).toLocaleString('es-ES',{minimumFractionDigits:2}):''}" placeholder="300,00"></div>
-    <div class="field"><label>Mes</label><input name="period_month" type="month" required value="${esc(month)}"></div>
-    <label class="v59-switch-row"><span><strong>Presupuesto activo</strong><small>Se mostrará en Herramientas y en el widget.</small></span><input type="checkbox" name="active" ${existing?.active===false?'':'checked'}><i></i></label>
+    <div class="field"><label>Importe máximo por mes</label><input name="amount" inputmode="decimal" required value="${existing?(Number(existing.amount_cents||0)/100).toLocaleString('es-ES',{minimumFractionDigits:2}):''}" placeholder="300,00"></div>
+    <div class="grid two"><div class="field"><label>Mes de inicio</label><input name="start_month" type="month" required value="${esc(month)}"></div><div class="field"><label>Número de meses</label><input name="months_count" type="number" min="1" max="60" step="1" required value="${defaultMonths}"></div></div>
+    <div class="budget-duration-note">Se creará el mismo límite mensual durante el número de meses indicado. Podrás consultar los meses anteriores y futuros en Estadísticas.</div>
+    <label class="v59-switch-row"><span><strong>Presupuesto activo</strong><small>Se mostrará en Herramientas y en el widget durante cada mes programado.</small></span><input type="checkbox" name="active" ${existing?.active===false?'':'checked'}><i></i></label>
     <div class="actions">${existing?'<button type="button" class="btn danger" id="delete-budget">Eliminar</button>':''}<button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`);
   const form=document.querySelector('#budget-form');
   form.querySelector('[name="category_key"]').onchange=e=>{if(!existing||form.elements.name.value===budgetCategoryMeta[category].label)form.elements.name.value=budgetCategoryMeta[e.target.value].label;};
-  form.onsubmit=async e=>{e.preventDefault();const button=e.submitter,fd=new FormData(form),amount=cents(fd.get('amount'));if(amount<=0)return toast('Indica un importe mayor que cero.',true);busy(button,true);const payload={user_id:state.user.id,name:String(fd.get('name')||'').trim(),category_key:String(fd.get('category_key')),amount_cents:amount,period_month:String(fd.get('period_month')),active:fd.get('active')==='on',updated_at:new Date().toISOString()};const result=existing?await sb.from('budgets_v67').update(payload).eq('id',existing.id):await sb.from('budgets_v67').insert(payload);busy(button,false);if(result.error)return toast(result.error.message,true);closeModal();await refresh();state.tab='tools';state.toolsSection='budget';renderShell();toast(existing?'Presupuesto actualizado':'Presupuesto creado');};
-  document.querySelector('#delete-budget')?.addEventListener('click',async()=>{if(!confirm('¿Eliminar este presupuesto?'))return;const {error}=await sb.from('budgets_v67').delete().eq('id',existing.id);if(error)return toast(error.message,true);closeModal();await refresh();state.tab='tools';state.toolsSection='budget';renderShell();toast('Presupuesto eliminado');});
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const button=e.submitter,fd=new FormData(form),amount=cents(fd.get('amount')),months=Math.max(1,Math.min(60,Number(fd.get('months_count')||1)));
+    if(amount<=0)return toast('Indica un importe mayor que cero.',true);
+    busy(button,true);
+    const {data,error}=await sb.rpc('a2c_save_budget_series_v68',{
+      p_series_id:existing?budgetSeriesId(existing):null,
+      p_name:String(fd.get('name')||'').trim(),
+      p_category_key:String(fd.get('category_key')),
+      p_amount_cents:amount,
+      p_start_month:String(fd.get('start_month')),
+      p_months:months,
+      p_active:fd.get('active')==='on'
+    });
+    busy(button,false);
+    if(error)return toast(`No se pudo guardar el presupuesto: ${error.message}`,true);
+    closeModal();await refresh();state.tab='tools';state.toolsSection='budget';renderShell();toast(existing?'Presupuesto actualizado':'Presupuesto guardado correctamente');
+  };
+  document.querySelector('#delete-budget')?.addEventListener('click',async()=>{
+    if(!confirm('¿Eliminar este presupuesto y todos los meses asociados?'))return;
+    const {error}=await sb.rpc('a2c_delete_budget_series_v68',{p_series_id:budgetSeriesId(existing)});
+    if(error)return toast(error.message,true);
+    closeModal();await refresh();state.tab='tools';state.toolsSection='budget';renderShell();toast('Presupuesto eliminado');
+  });
+}
+function budgetStatsArchive(){
+  const current=currentMonthKey();
+  const previous=state.budgets.filter(row=>row.period_month<current).sort((a,b)=>String(b.period_month).localeCompare(String(a.period_month)));
+  const future=state.budgets.filter(row=>row.period_month>current).sort((a,b)=>String(a.period_month).localeCompare(String(b.period_month)));
+  const group=(rows,title,empty)=>`<div class="budget-archive-group"><h3>${title}</h3>${rows.length?`<div class="budget-archive-list">${rows.map(row=>{const meta=budgetCategoryMeta[row.category_key]||budgetCategoryMeta.otros,spent=budgetSpent(row),pct=Math.min(100,Math.round(spent/Math.max(1,Number(row.amount_cents))*100));return `<div class="budget-archive-row"><div class="budget-archive-symbol">${meta.icon}</div><div><strong>${esc(row.name)}</strong><small>${esc(budgetMonthLabel(row.period_month))} · ${esc(meta.label)}</small></div><div><b>${money(spent)} / ${money(row.amount_cents)}</b><small>${pct}% consumido</small></div></div>`;}).join('')}</div>`:`<p class="muted">${empty}</p>`}</div>`;
+  return `<article class="card budget-history-card"><style>.budget-history-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}.budget-archive-group h3{margin:0 0 12px}.budget-archive-list{display:grid;gap:9px}.budget-archive-row{display:grid;grid-template-columns:38px 1fr auto;align-items:center;gap:10px;padding:11px;border-radius:15px;background:#f8f7fb}.budget-archive-symbol{width:38px;height:38px;border-radius:12px;background:#eee9ff;display:grid;place-items:center}.budget-archive-row strong,.budget-archive-row small{display:block}.budget-archive-row>div:last-child{text-align:right}.budget-archive-row small{font-size:11px;color:var(--muted);margin-top:2px}</style><div class="card-head"><div><h2>Histórico de presupuestos</h2><p class="muted">Consulta presupuestos finalizados y los que comenzarán próximamente.</p></div></div><div class="budget-history-grid">${group(previous,'Presupuestos anteriores','Todavía no hay presupuestos anteriores.')}${group(future,'Presupuestos futuros','No hay presupuestos futuros programados.')}</div></article>`;
 }
 
 function statsTabs(){const tabs=[['stats','Estadísticas'],['legal','Legal']];return `<nav class="section-tabs" aria-label="Estadísticas y legal">${tabs.map(([key,label])=>`<button class="${state.statsSection===key?'active':''}" data-stats-section="${key}">${label}</button>`).join('')}</nav>`;}
@@ -864,6 +903,7 @@ function renderStatsDashboard(){
   return `<section>
     <div class="dashboard-head"><div><span class="eyebrow">Inteligencia financiera</span><h1>Estadísticas</h1><p class="muted">Analiza conceptos, ahorro, inversión y combustible.</p></div><div class="head-actions"><button class="btn ghost" data-export-csv>Exportar CSV</button></div></div>
     ${monthlyReportCard()}
+    ${budgetStatsArchive()}
     <form class="stats-toolbar stats-segments" id="stats-filter"><label>Desde<input name="from" type="date" value="${esc(state.filters.from)}"></label><label>Hasta<input name="to" type="date" value="${esc(state.filters.to)}"></label><label>Tipo<select name="kind"><option value="">Todos</option>${Object.entries(kindLabels).map(([k,l])=>`<option value="${k}" ${state.filters.kind===k?'selected':''}>${l}</option>`).join('')}</select></label><label>Segmento<select name="resourceType"><option value="">Todos</option><option value="main" ${state.filters.resourceType==='main'?'selected':''}>Cuenta principal</option><option value="piggy" ${state.filters.resourceType==='piggy'?'selected':''}>Huchas</option><option value="folder" ${state.filters.resourceType==='folder'?'selected':''}>Carpetas</option><option value="goal" ${state.filters.resourceType==='goal'?'selected':''}>Objetivos</option></select></label><label>Elemento<select name="resourceId"><option value="">Todos</option>${state.resources.filter(r=>!state.filters.resourceType||state.filters.resourceType===r.type).map(r=>`<option value="${r.id}" ${state.filters.resourceId===r.id?'selected':''}>${esc(r.name)}</option>`).join('')}</select></label><button type="button" class="period-chip" data-period="month">Este mes</button><button type="button" class="period-chip" data-period="quarter">3 meses</button><button type="button" class="period-chip" data-period="year">Este año</button></form>
     <div class="kpi-grid"><article class="kpi-card"><span>Flujo neto</span><strong class="${cashflow>=0?'income':'expense'}">${money(cashflow)}</strong><small>Ingresos menos salidas</small></article><article class="kpi-card"><span>Tasa de ahorro</span><strong class="${rate>=20?'income':'saving'}">${rate}%</strong><small>Sobre ingresos</small></article><article class="kpi-card"><span>Ahorro</span><strong class="saving">${money(t.saving)}</strong><small>Total seleccionado</small></article><article class="kpi-card"><span>Inversión</span><strong class="investment">${money(t.investment)}</strong><small>Total seleccionado</small></article></div>
     <article class="card chart-card"><div class="card-head"><div><h2>Tendencia financiera</h2><p class="muted">Ingresos y gastos mensuales</p></div><div class="chart-key"><span class="key-income">Ingresos</span><span class="key-expense">Gastos</span></div></div>${professionalLineChart(series)}</article>
