@@ -1573,10 +1573,48 @@ window.a2cAndroidRegisterPayment = async function (payment) {
 };
 
 
-// Datos para widgets y avisos nativos Android 2.3.
+// Datos actualizados para widgets y avisos nativos Android 2.5.
 window.a2cAndroidGetNativeData = async function(){
-  if(!state?.user)return {error:'not_authenticated'};
-  const start=new Date();start.setDate(1);const monthStart=`${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-01`;
-  const monthExpenses=state.transactions.filter(t=>t.kind==='expense'&&String(t.occurred_on)>=monthStart).reduce((sum,t)=>sum+Number(t.amount_cents||0),0);
-  return {available_cents:mainBalance(),month_expenses_cents:monthExpenses,scheduled:(state.recurring||[]).filter(x=>x.active).map(x=>({id:x.id,concept:x.concept,amount_cents:x.amount_cents,next_run:x.next_run,active:x.active}))};
+  try{
+    const {data:{user},error:userError}=await sb.auth.getUser();
+    if(userError||!user)return {error:'not_authenticated'};
+
+    const [txResult,scheduledResult]=await Promise.all([
+      sb.from('finance_transactions')
+        .select('amount_cents,kind,occurred_on,resource_id,payment_method,is_transfer,transfer_role,resource:resources(type)'),
+      sb.from('scheduled_movements_v63')
+        .select('id,user_id,concept,amount_cents,next_run,active')
+        .eq('user_id',user.id)
+        .eq('active',true)
+        .order('next_run',{ascending:true})
+    ]);
+
+    if(txResult.error)return {error:txResult.error.message,retry:true};
+
+    const transactions=(txResult.data||[]).filter(row=>{
+      if(row?.is_transfer&&row?.transfer_role==='destination')return false;
+      return true;
+    });
+
+    const available=transactions
+      .filter(row=>{
+        if(row?.payment_method==='crypto')return false;
+        return !row?.resource_id||row?.resource?.type==='folder';
+      })
+      .reduce((sum,row)=>sum+(row.kind==='income'?Number(row.amount_cents||0):-Number(row.amount_cents||0)),0);
+
+    const now=new Date();
+    const monthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const monthExpenses=transactions
+      .filter(row=>row.kind==='expense'&&String(row.occurred_on||'').startsWith(monthKey))
+      .reduce((sum,row)=>sum+Number(row.amount_cents||0),0);
+
+    const scheduled=scheduledResult.error?[]:(scheduledResult.data||[]).map(row=>({
+      id:row.id,concept:row.concept,amount_cents:row.amount_cents,next_run:row.next_run,active:row.active
+    }));
+
+    return {available_cents:available,month_expenses_cents:monthExpenses,scheduled};
+  }catch(error){
+    return {error:error?.message||'sync_failed',retry:true};
+  }
 };
