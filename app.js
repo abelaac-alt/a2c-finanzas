@@ -30,7 +30,7 @@ const state = {
   transactions: [], notifications: [],
   recurring: [], scheduledExpenses: [], cryptoHoldings: [], cryptoLedger: [],
   socialPosts: [], socialLikes: [], socialComments: [], friendships: [], follows: [], socialProfiles: [],
-  expenseSplits: [], stockSales: [], leaderboard: [],
+  expenseSplits: [], stockSales: [], leaderboard: [], budgets: [],
   filters: { query:'', kind:'', resourceId:'', resourceType:'', from:'', to:'' }
 };
 
@@ -371,7 +371,10 @@ async function loadAll(){
   );
 
   state.profiles=isAdmin()?(result[13]?.data||[]):[];
+  const budgetResult=await sb.from('budgets_v67').select('*').eq('user_id',state.user.id).order('period_month',{ascending:false}).order('created_at',{ascending:false});
+  state.budgets=budgetResult.error?[]:(budgetResult.data||[]);
 }
+
 async function refresh(render=true){await loadAll();if(render)renderShell()}
 
 const uiIcons={
@@ -408,8 +411,70 @@ function renderShell(){
   </div>`;
   bind();
 }
-function toolsTabs(){const tabs=[['piggy','Huchas'],['folder','Carpetas'],['goal','Objetivos']];return `<nav class="section-tabs" aria-label="Herramientas">${tabs.map(([key,label])=>`<button class="${state.toolsSection===key?'active':''}" data-tools-section="${key}">${label}</button>`).join('')}</nav>`;}
-function renderTools(){return `<section class="hub-page"><div class="dashboard-head"><div><span class="eyebrow">Organización</span><h1>Herramientas</h1><p class="muted">Gestiona huchas, carpetas, objetivos y movimientos automáticos.</p></div><div class="head-actions"><button type="button" class="btn primary" data-manage-recurring>Movimientos programados</button></div></div>${toolsTabs()}${renderResources(state.toolsSection)}</section>`;}
+function toolsTabs(){const tabs=[['piggy','Huchas'],['folder','Carpetas'],['goal','Objetivos'],['budget','Presupuestos']];return `<nav class="section-tabs" aria-label="Herramientas">${tabs.map(([key,label])=>`<button class="${state.toolsSection===key?'active':''}" data-tools-section="${key}">${label}</button>`).join('')}</nav>`;}
+function renderTools(){return `<section class="hub-page"><div class="dashboard-head"><div><span class="eyebrow">Organización</span><h1>Herramientas</h1><p class="muted">Gestiona huchas, carpetas, objetivos, presupuestos y movimientos automáticos.</p></div><div class="head-actions"><button type="button" class="btn primary" data-manage-recurring>Movimientos programados</button></div></div>${toolsTabs()}${state.toolsSection==='budget'?renderBudgets():renderResources(state.toolsSection)}</section>`;}
+
+const budgetCategoryMeta={
+  alimentacion:{label:'Alimentación',icon:'🛒'},
+  ocio:{label:'Ocio',icon:'🎟️'},
+  salud:{label:'Salud',icon:'❤'},
+  combustible:{label:'Combustible',icon:'⛽'},
+  otros:{label:'Otros',icon:'◌'}
+};
+function normalizeBudgetText(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+function detectBudgetCategory(tx){
+  if(tx?.budget_category&&budgetCategoryMeta[tx.budget_category])return tx.budget_category;
+  const text=normalizeBudgetText(`${tx?.concept||''} ${tx?.merchant||''} ${tx?.notes||''}`);
+  const rules={
+    combustible:['gasolina','diesel','gasoil','combustible','repostaje','gasolinera','cepsa','repsol','galp','shell','bp '],
+    alimentacion:['mercadona','lidl','aldi','carrefour','supermercado','alimentacion','comida','panaderia','carniceria','fruteria','hipercor','eroski','alcampo','dia%',' dia '],
+    salud:['medico','padel','futbol','farmacia','medicina','medicinas','salud','clinica','dentista','fisioterapia','gimnasio','deporte'],
+    ocio:['cine','escapada','hotel','concierto','bar','restaurante','discoteca','teatro','viaje','vacaciones','pub','ocio','netflix','spotify']
+  };
+  for(const [category,words] of Object.entries(rules))if(words.some(word=>text.includes(word.replace('%',''))))return category;
+  return 'otros';
+}
+function budgetMonthLabel(value){const [year,month]=String(value||currentMonthKey()).split('-').map(Number);return new Intl.DateTimeFormat('es-ES',{month:'long',year:'numeric'}).format(new Date(year,Math.max(0,month-1),1));}
+function budgetSpent(budget){return state.transactions.filter(tx=>tx.kind==='expense'&&String(tx.occurred_on||'').startsWith(budget.period_month)&&detectBudgetCategory(tx)===budget.category_key).reduce((sum,tx)=>sum+Number(tx.amount_cents||0),0);}
+function budgetCard(budget){
+  const spent=budgetSpent(budget),limit=Number(budget.amount_cents||0),remaining=Math.max(0,limit-spent),pct=limit>0?Math.min(100,Math.round(spent/limit*100)):0,meta=budgetCategoryMeta[budget.category_key]||budgetCategoryMeta.otros;
+  const status=pct>=100?'exceeded':pct>=80?'warning':'healthy';
+  return `<article class="card budget-card ${status}">
+    <div class="budget-card-head"><div class="budget-icon">${meta.icon}</div><div><h3>${esc(budget.name||meta.label)}</h3><p class="muted">${esc(meta.label)} · ${esc(budgetMonthLabel(budget.period_month))}</p></div><button type="button" class="icon-btn budget-menu" data-edit-budget="${budget.id}" aria-label="Editar presupuesto">⋮</button></div>
+    <div class="budget-numbers"><strong>${money(spent)} <small>gastados</small></strong><span>${money(remaining)} disponibles</span></div>
+    <div class="budget-progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+    <div class="budget-foot"><span>${pct}% consumido</span><b>${money(limit)}</b></div>
+  </article>`;
+}
+function renderBudgets(){
+  const month=currentMonthKey(),rows=state.budgets.filter(row=>row.active!==false&&row.period_month===month);
+  const total=rows.reduce((sum,row)=>sum+Number(row.amount_cents||0),0),spent=rows.reduce((sum,row)=>sum+budgetSpent(row),0),pct=total>0?Math.min(100,Math.round(spent/total*100)):0;
+  return `<style>
+    .budget-overview{background:linear-gradient(135deg,#17131f,#34275c);color:#fff;border-radius:26px;padding:22px;margin-bottom:18px;box-shadow:0 16px 38px rgba(47,35,81,.18)}
+    .budget-overview-top,.budget-card-head,.budget-numbers,.budget-foot{display:flex;align-items:center;justify-content:space-between;gap:12px}.budget-overview h2{margin:3px 0 0;font-size:28px}.budget-overview .muted{color:rgba(255,255,255,.68)}
+    .budget-overview-track,.budget-progress{height:11px;background:rgba(255,255,255,.13);border-radius:999px;overflow:hidden;margin-top:16px}.budget-overview-track i,.budget-progress i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#7557ff,#9d83ff);transition:width .35s ease}.budget-overview-foot{display:flex;justify-content:space-between;margin-top:9px;font-size:12px;color:rgba(255,255,255,.72)}
+    .budget-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px}.budget-card{border:1px solid rgba(104,78,190,.10);box-shadow:0 12px 30px rgba(27,20,45,.07)}.budget-icon{width:46px;height:46px;border-radius:15px;background:linear-gradient(145deg,#f1edff,#e7fbf7);display:grid;place-items:center;font-size:22px}.budget-card-head>div:nth-child(2){flex:1}.budget-card-head h3{margin:0}.budget-card-head p{margin:3px 0 0}.budget-menu{font-size:22px}.budget-numbers{margin-top:20px}.budget-numbers strong{font-size:21px}.budget-numbers strong small{font-size:11px;font-weight:500;color:var(--muted)}.budget-numbers span{font-size:13px;color:var(--muted)}.budget-progress{height:10px;background:#edeaf3}.budget-card.warning .budget-progress i{background:linear-gradient(90deg,#efb145,#f08e4b)}.budget-card.exceeded .budget-progress i{background:linear-gradient(90deg,#dc4c4c,#ef7272)}.budget-foot{margin-top:8px;font-size:12px;color:var(--muted)}.budget-foot b{color:var(--text)}
+    .budget-empty{padding:34px;text-align:center;border:1px dashed rgba(104,78,190,.25);border-radius:22px;background:rgba(255,255,255,.6)}
+  </style><section class="budgets-page">
+    <div class="budget-overview"><div class="budget-overview-top"><div><span class="eyebrow">Presupuesto mensual</span><h2>${money(Math.max(0,total-spent))}</h2><p class="muted">Disponible de ${money(total)}</p></div><button type="button" class="btn primary" data-new-budget>Nuevo presupuesto</button></div><div class="budget-overview-track"><i style="width:${pct}%"></i></div><div class="budget-overview-foot"><span>${money(spent)} consumidos</span><span>${pct}%</span></div></div>
+    ${rows.length?`<div class="budget-grid">${rows.map(budgetCard).join('')}</div>`:`<div class="budget-empty"><h3>Crea tu primer presupuesto</h3><p class="muted">Define un límite mensual para alimentación, ocio, salud o combustible.</p><button class="btn primary" data-new-budget>Crear presupuesto</button></div>`}
+  </section>`;
+}
+function openBudgetForm(existing=null){
+  const month=existing?.period_month||currentMonthKey(),category=existing?.category_key||'alimentacion';
+  modal(`<form id="budget-form"><div class="modal-head"><div><h2>${existing?'Editar':'Nuevo'} presupuesto</h2><p class="muted">Los gastos se clasifican automáticamente por su concepto o comercio.</p></div><button type="button" class="close-btn" data-close>×</button></div>
+    <div class="field"><label>Nombre</label><input name="name" maxlength="80" required value="${esc(existing?.name||budgetCategoryMeta[category].label)}" placeholder="Presupuesto de alimentación"></div>
+    <div class="field"><label>Categoría</label><select name="category_key">${Object.entries(budgetCategoryMeta).filter(([key])=>key!=='otros').map(([key,meta])=>`<option value="${key}" ${key===category?'selected':''}>${meta.icon} ${meta.label}</option>`).join('')}</select></div>
+    <div class="field"><label>Importe máximo</label><input name="amount" inputmode="decimal" required value="${existing?(Number(existing.amount_cents||0)/100).toLocaleString('es-ES',{minimumFractionDigits:2}):''}" placeholder="300,00"></div>
+    <div class="field"><label>Mes</label><input name="period_month" type="month" required value="${esc(month)}"></div>
+    <label class="v59-switch-row"><span><strong>Presupuesto activo</strong><small>Se mostrará en Herramientas y en el widget.</small></span><input type="checkbox" name="active" ${existing?.active===false?'':'checked'}><i></i></label>
+    <div class="actions">${existing?'<button type="button" class="btn danger" id="delete-budget">Eliminar</button>':''}<button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`);
+  const form=document.querySelector('#budget-form');
+  form.querySelector('[name="category_key"]').onchange=e=>{if(!existing||form.elements.name.value===budgetCategoryMeta[category].label)form.elements.name.value=budgetCategoryMeta[e.target.value].label;};
+  form.onsubmit=async e=>{e.preventDefault();const button=e.submitter,fd=new FormData(form),amount=cents(fd.get('amount'));if(amount<=0)return toast('Indica un importe mayor que cero.',true);busy(button,true);const payload={user_id:state.user.id,name:String(fd.get('name')||'').trim(),category_key:String(fd.get('category_key')),amount_cents:amount,period_month:String(fd.get('period_month')),active:fd.get('active')==='on',updated_at:new Date().toISOString()};const result=existing?await sb.from('budgets_v67').update(payload).eq('id',existing.id):await sb.from('budgets_v67').insert(payload);busy(button,false);if(result.error)return toast(result.error.message,true);closeModal();await refresh();state.tab='tools';state.toolsSection='budget';renderShell();toast(existing?'Presupuesto actualizado':'Presupuesto creado');};
+  document.querySelector('#delete-budget')?.addEventListener('click',async()=>{if(!confirm('¿Eliminar este presupuesto?'))return;const {error}=await sb.from('budgets_v67').delete().eq('id',existing.id);if(error)return toast(error.message,true);closeModal();await refresh();state.tab='tools';state.toolsSection='budget';renderShell();toast('Presupuesto eliminado');});
+}
+
 function statsTabs(){const tabs=[['stats','Estadísticas'],['legal','Legal']];return `<nav class="section-tabs" aria-label="Estadísticas y legal">${tabs.map(([key,label])=>`<button class="${state.statsSection===key?'active':''}" data-stats-section="${key}">${label}</button>`).join('')}</nav>`;}
 function renderStatsHub(){return `<section class="hub-page">${statsTabs()}${state.statsSection==='legal'?renderLegalReport():renderStatsDashboard()}</section>`;}
 function renderPage(){
@@ -854,6 +919,8 @@ function bind(){
   document.querySelectorAll('[data-profile-id]').forEach(b=>b.onclick=e=>{e.stopPropagation();openUserProfile(b.dataset.profileId)});
   document.querySelectorAll('[data-tab-shortcut]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tabShortcut;renderShell()});
     document.querySelectorAll('[data-manage-recurring]').forEach(b=>b.onclick=openRecurring);
+  document.querySelectorAll('[data-new-budget]').forEach(b=>b.onclick=()=>openBudgetForm());
+  document.querySelectorAll('[data-edit-budget]').forEach(b=>b.onclick=()=>openBudgetForm(state.budgets.find(row=>String(row.id)===String(b.dataset.editBudget))));
   document.querySelector('[data-export-csv]')?.addEventListener('click',exportCsv);
   document.querySelector('[data-download-legal]')?.addEventListener('click',downloadLegalReport);
   document.querySelectorAll('[data-legal-period]').forEach(b=>b.onclick=()=>{const now=new Date();if(b.dataset.legalPeriod==='year'){state.legalFilters.from=`${now.getFullYear()}-01-01`;state.legalFilters.to=today();}else{state.legalFilters.from='';state.legalFilters.to='';}renderShell();});
@@ -1560,10 +1627,11 @@ window.a2cAndroidGetNativeData = async function(){
     if(userError||!user)return {error:'not_authenticated'};
     const now=new Date(),monthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     const since30=new Date(now);since30.setDate(since30.getDate()-29);const since30Key=since30.toISOString().slice(0,10);
-    const [txResult,scheduledResult,scheduledExpenseResult]=await Promise.all([
-      sb.from('finance_transactions').select('amount_cents,kind,occurred_on,resource_id,payment_method,is_transfer,transfer_role,fuel_liters,fuel_price_per_liter_milli,resource:resources(type)'),
+    const [txResult,scheduledResult,scheduledExpenseResult,budgetResult]=await Promise.all([
+      sb.from('finance_transactions').select('amount_cents,kind,occurred_on,resource_id,payment_method,is_transfer,transfer_role,fuel_liters,fuel_price_per_liter_milli,budget_category,concept,merchant,notes,resource:resources(type)'),
       sb.from('scheduled_movements_v63').select('id,user_id,concept,amount_cents,next_run,active').eq('user_id',user.id).eq('active',true).order('next_run',{ascending:true}),
-      sb.from('scheduled_expenses_v66').select('id,user_id,concept,amount_cents,next_run,active').eq('user_id',user.id).eq('active',true).order('next_run',{ascending:true})
+      sb.from('scheduled_expenses_v66').select('id,user_id,concept,amount_cents,next_run,active').eq('user_id',user.id).eq('active',true).order('next_run',{ascending:true}),
+      sb.from('budgets_v67').select('id,name,category_key,amount_cents,period_month,active').eq('user_id',user.id).eq('active',true).eq('period_month',monthKey).order('created_at',{ascending:true})
     ]);
     if(txResult.error)return {error:txResult.error.message,retry:true};
     const transactions=(txResult.data||[]).filter(row=>!(row?.is_transfer&&row?.transfer_role==='destination'));
@@ -1579,7 +1647,8 @@ window.a2cAndroidGetNativeData = async function(){
     const transferScheduled=scheduledResult.error?[]:(scheduledResult.data||[]);
     const expenseScheduled=scheduledExpenseResult.error?[]:(scheduledExpenseResult.data||[]);
     const scheduled=[...transferScheduled,...expenseScheduled].map(row=>({id:row.id,concept:row.concept,amount_cents:row.amount_cents,next_run:row.next_run,active:row.active})).sort((a,b)=>String(a.next_run).localeCompare(String(b.next_run))).slice(0,6);
-    return {available_cents:available,month_income_cents:totals.income,month_expenses_cents:totals.expense,month_saving_cents:totals.saving,month_investment_cents:totals.investment,fuel_30d_liters:fuelLiters,fuel_30d_total_cents:fuelTotal,fuel_30d_average_milli:fuelAverageMilli,scheduled};
+    const budgets=(budgetResult.error?[]:(budgetResult.data||[])).map(budget=>{const spent=transactions.filter(row=>row.kind==='expense'&&String(row.occurred_on||'').startsWith(budget.period_month)&&detectBudgetCategory(row)===budget.category_key).reduce((sum,row)=>sum+Number(row.amount_cents||0),0);return {id:budget.id,name:budget.name,category_key:budget.category_key,amount_cents:Number(budget.amount_cents||0),spent_cents:spent,remaining_cents:Math.max(0,Number(budget.amount_cents||0)-spent),percentage:Number(budget.amount_cents||0)>0?Math.min(100,Math.round(spent/Number(budget.amount_cents||0)*100)):0};});
+    return {available_cents:available,month_income_cents:totals.income,month_expenses_cents:totals.expense,month_saving_cents:totals.saving,month_investment_cents:totals.investment,fuel_30d_liters:fuelLiters,fuel_30d_total_cents:fuelTotal,fuel_30d_average_milli:fuelAverageMilli,scheduled,budgets};
   }catch(error){return {error:error?.message||'sync_failed',retry:true};}
 };
 
