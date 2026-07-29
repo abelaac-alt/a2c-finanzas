@@ -1630,8 +1630,22 @@ function openUserProfile(profileId){
 function openProfile(){
   modal(`<form id="profile-form"><div class="modal-head"><div><h2>Mi perfil</h2><p class="muted">${esc(state.profile.email)}</p></div><button type="button" class="close-btn" data-close>×</button></div>
     <div class="profile-photo-editor">${avatarMarkup(state.profile,'profile-avatar-large')}<div><label class="btn receipt-source-btn" for="avatar-file">Cambiar foto</label><input class="receipt-file-input" id="avatar-file" name="avatar" type="file" accept="image/*"><button type="button" class="text-btn ${state.profile.avatar_path?'':'hidden'}" id="remove-avatar">Eliminar foto</button><small class="muted" id="avatar-selection">Imagen cuadrada, comprimida automáticamente.</small></div></div>
-    <div class="field"><label>Nombre</label><input name="name" required minlength="2" maxlength="80" value="${esc(state.profile.display_name||'')}"></div><div class="field"><label>Nombre de usuario</label><div class="input-prefix"><span>@</span><input name="username" required minlength="3" maxlength="30" pattern="[a-z0-9._]+" value="${esc(state.profile.username||'')}" placeholder="abel.atero"></div><small class="muted">Solo minúsculas, números, punto y guion bajo.</small></div><div class="field"><label>Privacidad</label><select name="is_public"><option value="true" ${state.profile.is_public!==false?'selected':''}>Cuenta pública</option><option value="false" ${state.profile.is_public===false?'selected':''}>Cuenta privada</option></select></div><div class="field"><label>Nueva contraseña</label><input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password"></div>${window.A2CNative?`<div class="field"><label>Ajustes Android</label><button type="button" class="btn full" id="android-native-settings">Notificaciones, pagos y avisos</button></div>`:''}<div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`);
+    <div class="field"><label>Nombre</label><input name="name" required minlength="2" maxlength="80" value="${esc(state.profile.display_name||'')}"></div><div class="field"><label>Nombre de usuario</label><div class="input-prefix"><span>@</span><input name="username" required minlength="3" maxlength="30" pattern="[a-z0-9._]+" value="${esc(state.profile.username||'')}" placeholder="abel.atero"></div><small class="muted">Solo minúsculas, números, punto y guion bajo.</small></div><div class="field"><label>Privacidad</label><select name="is_public"><option value="true" ${state.profile.is_public!==false?'selected':''}>Cuenta pública</option><option value="false" ${state.profile.is_public===false?'selected':''}>Cuenta privada</option></select></div><div class="field"><label>Nueva contraseña</label><input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password"></div><div class="a2c41-profile-menu">
+      <button type="button" class="a2c41-profile-option" id="a2c41-control-financial"><span>◫</span><div><strong>Control financiero</strong><small>Reglas, categorías y presupuestos</small></div><em>›</em></button>
+      <button type="button" class="a2c41-profile-option" id="a2c41-profile-notifications"><span>◉</span><div><strong>Notificaciones</strong><small>Configura pagos y avisos</small></div><em>›</em></button>
+      ${window.A2CNative?`<button type="button" class="a2c41-profile-option" id="android-native-settings"><span>⌁</span><div><strong>Pagos y avisos Android</strong><small>Detección, permisos y diagnóstico</small></div><em>›</em></button>`:''}
+      <button type="button" class="a2c41-profile-option" id="a2c41-profile-settings"><span>⚙</span><div><strong>Ajustes</strong><small>Copias de seguridad y aplicación Android</small></div><em>›</em></button>
+    </div><style>
+      .a2c41-profile-menu{display:grid;gap:8px;margin:16px 0}
+      .a2c41-profile-option{display:flex;align-items:center;gap:11px;width:100%;padding:11px 12px;border:1px solid #ebe7f1;border-radius:14px;background:#fff;text-align:left}
+      .a2c41-profile-option>span{width:34px;height:34px;border-radius:11px;background:#f1edfa;display:grid;place-items:center;font-size:18px}
+      .a2c41-profile-option>div{flex:1;min-width:0}.a2c41-profile-option strong,.a2c41-profile-option small{display:block}
+      .a2c41-profile-option small{font-size:11px;color:var(--muted);margin-top:2px}.a2c41-profile-option em{font-style:normal;color:#978da5;font-size:20px}
+    </style><div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`);
   document.querySelector('#android-native-settings')?.addEventListener('click',()=>window.A2CNative?.openAndroidSettings());
+  document.querySelector('#a2c41-control-financial')?.addEventListener('click',()=>{closeModal();openA2C40Control('rules')});
+  document.querySelector('#a2c41-profile-notifications')?.addEventListener('click',()=>{closeModal();openA2C40Control('notifications')});
+  document.querySelector('#a2c41-profile-settings')?.addEventListener('click',()=>{closeModal();openA2C41Settings()});
   const form=document.querySelector('#profile-form'),fileInput=document.querySelector('#avatar-file'),selection=document.querySelector('#avatar-selection');let removeAvatar=false;
   fileInput.onchange=()=>{const f=fileInput.files?.[0];if(f){selection.textContent=f.name;removeAvatar=false;}};
   document.querySelector('#remove-avatar')?.addEventListener('click',()=>{removeAvatar=true;fileInput.value='';selection.textContent='La foto se eliminará al guardar.';});
@@ -1737,7 +1751,8 @@ window.a2cAndroidGetNativeData = async function(){
     const scheduled=[...transferScheduled,...expenseScheduled].map(row=>({id:row.id,concept:row.concept,amount_cents:row.amount_cents,next_run:row.next_run,active:row.active})).sort((a,b)=>String(a.next_run).localeCompare(String(b.next_run))).slice(0,6);
     const budgets=(budgetResult.error?[]:(budgetResult.data||[])).map(budget=>{const spent=transactions.filter(row=>row.kind==='expense'&&String(row.occurred_on||'').startsWith(budget.period_month)&&detectBudgetCategory(row)===budget.category_key).reduce((sum,row)=>sum+Number(row.amount_cents||0),0);return {id:budget.id,name:budget.name,category_key:budget.category_key,amount_cents:Number(budget.amount_cents||0),spent_cents:spent,remaining_cents:Math.max(0,Number(budget.amount_cents||0)-spent),percentage:Number(budget.amount_cents||0)>0?Math.min(100,Math.round(spent/Number(budget.amount_cents||0)*100)):0};});
     const collaboration_notifications=(notificationResult.error?[]:(notificationResult.data||[])).filter(n=>/expense|request|resource|group|invitation|goal|folder|piggy/i.test(String(n.type||'')+' '+String(n.title||'')+' '+String(n.message||'')));
-    return {available_cents:available,month_income_cents:totals.income,month_expenses_cents:totals.expense,month_saving_cents:totals.saving,month_investment_cents:totals.investment,fuel_30d_liters:fuelLiters,fuel_30d_total_cents:fuelTotal,fuel_30d_average_milli:fuelAverageMilli,scheduled,budgets,collaboration_notifications};
+    const latestExpense=transactions.filter(row=>row.kind==='expense').sort((a,b)=>String(b.occurred_on||'').localeCompare(String(a.occurred_on||'')))[0]||null;
+    return {available_cents:available,month_income_cents:totals.income,month_expenses_cents:totals.expense,month_saving_cents:totals.saving,month_investment_cents:totals.investment,fuel_30d_liters:fuelLiters,fuel_30d_total_cents:fuelTotal,fuel_30d_average_milli:fuelAverageMilli,latest_expense_amount_cents:Number(latestExpense?.amount_cents||0),latest_expense_concept:String(latestExpense?.merchant||latestExpense?.concept||''),latest_expense_date:String(latestExpense?.occurred_on||''),scheduled,budgets,collaboration_notifications};
   }catch(error){return {error:error?.message||'sync_failed',retry:true};}
 };
 
@@ -1915,10 +1930,56 @@ openAdmin=function(){
  document.querySelector('#new-user').onclick=()=>openUserForm(null);document.querySelectorAll('[data-user]').forEach(b=>b.onclick=()=>openUserForm(state.profiles.find(p=>p.id===b.dataset.user)));
 };
 
-function a2c40InjectEntry(){
- if(!state.user)return;
- const host=document.querySelector('.head-actions')||document.querySelector('.dashboard-head');
- if(host&&!document.querySelector('#a2c40-control-button')){const b=document.createElement('button');b.id='a2c40-control-button';b.className='btn';b.innerHTML=`Control financiero${a2c40.pending.filter(p=>p.status==='pending').length?` <b>${a2c40.pending.filter(p=>p.status==='pending').length}</b>`:''}`;b.onclick=()=>openA2C40Control();host.appendChild(b);}
+
+
+/* ==========================
+   A2C Finanzas 4.1
+   Perfil, actividad y ajustes
+   ========================== */
+const A2C_ANDROID_RELEASE_URL='https://github.com/abelaac-alt/a2c-finanzas-android/releases/latest';
+const A2C_ANDROID_REPOSITORY_URL='https://github.com/abelaac-alt/a2c-finanzas-android';
+
+function a2c41PendingCount(){
+  return a2c40.pending.filter(row=>row.status==='pending').length;
 }
-new MutationObserver(()=>a2c40InjectEntry()).observe(document.documentElement,{subtree:true,childList:true});
-setTimeout(async()=>{await a2c40Load();a2c40InjectEntry();},1800);
+
+const a2c41RenderActivityOriginal=renderActivity;
+renderActivity=function(){
+  const count=a2c41PendingCount();
+  const block=`<button type="button" class="a2c41-pending-card ${count?'active':''}" id="a2c41-open-pending">
+    <span class="a2c41-pending-card-icon">⌁</span>
+    <span><strong>Pagos pendientes</strong><small>${count?`${count} pago${count===1?'':'s'} pendiente${count===1?'':'s'} de revisar`:'Todos los pagos están revisados'}</small></span>
+    ${count?`<b>${count}</b>`:'<em>›</em>'}
+  </button>
+  <style>
+    .a2c41-pending-card{width:100%;display:flex;align-items:center;gap:11px;padding:11px 12px;margin:0 0 12px;border:1px solid #e9e5ef;border-radius:14px;background:#fff;text-align:left}
+    .a2c41-pending-card.active{border-color:#d9cffa;background:#faf8ff}
+    .a2c41-pending-card-icon{width:36px;height:36px;border-radius:12px;background:#eee9fa;display:grid;place-items:center;font-size:19px}
+    .a2c41-pending-card>span:nth-child(2){flex:1}.a2c41-pending-card strong,.a2c41-pending-card small{display:block}
+    .a2c41-pending-card small{font-size:11px;color:var(--muted);margin-top:2px}
+    .a2c41-pending-card b{min-width:24px;height:24px;padding:0 7px;border-radius:999px;background:#7557ff;color:#fff;display:grid;place-items:center}
+    .a2c41-pending-card em{font-style:normal;font-size:20px;color:#968ca3}
+  </style>`;
+  return a2c41RenderActivityOriginal().replace('<form class="filters filters-pro"',`${block}<form class="filters filters-pro"`);
+};
+
+const a2c41BindOriginal=bind;
+bind=function(){
+  a2c41BindOriginal();
+  document.querySelector('#a2c41-open-pending')?.addEventListener('click',()=>openA2C40Control('pending'));
+};
+
+function openA2C41Settings(){
+  modal(`<div class="modal-head"><div><h2>Ajustes</h2><p class="muted">Aplicación, copias y datos</p></div><button class="close-btn" data-close>×</button></div>
+    <div class="a2c41-settings-list">
+      <button type="button" id="a2c41-backups"><span>↻</span><div><strong>Copias de seguridad</strong><small>Exportar, importar y descargar CSV</small></div><em>›</em></button>
+      <a href="${A2C_ANDROID_RELEASE_URL}" target="_blank" rel="noopener" id="a2c41-download-android"><span>↓</span><div><strong>Descargar aplicación Android</strong><small>Abre la última versión publicada</small></div><em>›</em></a>
+      <a href="${A2C_ANDROID_REPOSITORY_URL}" target="_blank" rel="noopener"><span>⌘</span><div><strong>Proyecto Android</strong><small>Versiones y código en GitHub</small></div><em>›</em></a>
+    </div>
+    <style>
+      .a2c41-settings-list{display:grid;gap:9px}.a2c41-settings-list button,.a2c41-settings-list a{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid #ebe7f1;border-radius:14px;background:#fff;color:inherit;text-decoration:none;text-align:left}
+      .a2c41-settings-list>*>span{width:36px;height:36px;border-radius:12px;background:#f1edfa;display:grid;place-items:center;font-size:19px}
+      .a2c41-settings-list div{flex:1}.a2c41-settings-list strong,.a2c41-settings-list small{display:block}.a2c41-settings-list small{font-size:11px;color:var(--muted);margin-top:2px}.a2c41-settings-list em{font-style:normal;font-size:20px;color:#978da5}
+    </style>`);
+  document.querySelector('#a2c41-backups')?.addEventListener('click',()=>{closeModal();openA2C40Control('backup')});
+}
