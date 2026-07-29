@@ -1,7 +1,5 @@
-/*
- A2C Finanzas 5.2
- Archivo generado automáticamente desde /src.
-*/
+/* A2C Finanzas 5.3 */
+
 let deferredInstallPrompt=null;
 if("serviceWorker" in navigator){
   window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.error));
@@ -434,6 +432,7 @@ const uiIcons={
   logout:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5m5 5H3m10-9h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></svg>'
 };
 uiIcons.tools=uiIcons.folder;
+uiIcons.messages='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4V5z"/><path d="M8 9h8M8 12h5"/></svg>';
 function nav(tab,label){return `<button class="nav-btn ${state.tab===tab?'active':''}" data-tab="${tab}" aria-label="${label}" title="${label}">${uiIcons[tab]}<span>${label}</span></button>`}
 function renderShell(){
   a2cMarkReady();
@@ -451,7 +450,7 @@ function renderShell(){
     </header>
     <main class="view">${renderPage()}</main>
     <button class="finance-fab" id="finance-fab" aria-label="Añadir movimiento"><span>＋</span></button>
-    <nav class="bottom-nav" aria-label="Navegación principal">${nav('home','Inicio')}${nav('tools','Herramientas')}${nav('activity','Actividad')}${nav('stats','Estadísticas')}</nav>
+    <nav class="bottom-nav" aria-label="Navegación principal">${nav('home','Inicio')}${nav('tools','Herramientas')}${nav('messages','Mensajes')}${nav('activity','Actividad')}${nav('stats','Estadísticas')}</nav>
   </div>`;
   bind();
 }
@@ -610,6 +609,7 @@ function renderPage(){
   if(state.tab==='home')return renderHome();
   if(state.tab==='tools')return renderTools();
   if(state.tab==='activity')return renderActivity();
+  if(state.tab==='messages')return renderMessagesPage();
   return renderStatsHub();
 }
 
@@ -1119,7 +1119,7 @@ function openTransaction(tx={}){
     <div class="split-expense-detail hidden" id="split-expense-detail"><div class="fuel-title">Dividir gasto</div><label class="split-enable"><input type="checkbox" id="split-enabled"><span><b>Compartir este gasto</b><small>Añade personas en partes iguales o con importes personalizados.</small></span></label><div id="split-controls" class="hidden"><div class="split-mode-grid"><button type="button" class="split-mode-btn active" data-split-mode="equal">Partes iguales</button><button type="button" class="split-mode-btn" data-split-mode="custom">Importes diferentes</button></div><div id="split-people-list" class="split-people-list"></div><button type="button" class="btn" id="add-split-person">＋ Añadir persona</button><div class="split-summary" id="split-summary">Restante: ${money(tx.amount_cents||0)}</div></div></div>
     <div class="field"><label>Importe total (€)</label><input name="amount" inputmode="decimal" required value="${tx.amount_cents?Number(tx.amount_cents)/100:''}"></div><div class="field"><label>Fecha</label><input name="date" type="date" required value="${tx.occurred_on||today()}"></div><div class="field"><label>Notas</label><textarea name="notes">${esc(tx.notes||'')}</textarea></div>
     <div class="field receipt-picker"><label>Justificante</label><div class="receipt-picker-actions"><button type="button" class="btn receipt-source-btn" id="open-integrated-camera">📷 Abrir cámara</button><label class="btn receipt-source-btn" for="receipt-gallery">▣ Elegir imagen</label></div><input id="receipt-gallery" name="receipt_gallery" class="receipt-file-input" type="file" accept="image/*"><small class="muted receipt-selection" id="receipt-selection">No se ha seleccionado ninguna imagen.</small></div>
-    <div class="actions tx-form-actions">${editing?'<button type="button" class="btn danger" id="delete-tx">Borrar</button><button type="button" class="btn" id="share-tx-modal">▣ Compartir</button><button type="button" class="btn repeat-action-btn" id="repeat-tx-modal"><span>🔁</span> Repetir</button>':''}<button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`,true);
+    <div class="actions tx-form-actions">${editing?'<button type="button" class="btn danger" id="delete-tx">Borrar</button><button type="button" class="btn repeat-action-btn" id="repeat-tx-modal"><span>🔁</span> Repetir</button>':''}<button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`,true);
   const form=document.querySelector('#tx-form'),kind=form.elements.kind,resource=form.elements.resource_id,concept=form.elements.concept,amount=form.elements.amount;
   const galleryInput=document.querySelector('#receipt-gallery'),receiptSelection=document.querySelector('#receipt-selection');
   let pendingReceiptFile=null;
@@ -1129,7 +1129,8 @@ function openTransaction(tx={}){
   const splitBox=document.querySelector('#split-expense-detail'),splitToggle=document.querySelector('#split-enabled'),splitControls=document.querySelector('#split-controls'),splitList=document.querySelector('#split-people-list'),splitSummary=document.querySelector('#split-summary');
   let splitMode='equal';
   const existingSplits=editing?state.expenseSplits.filter(x=>x.transaction_id===tx.id&&x.owner_id===state.user.id):[];
-  const splitPersonOptions=()=>`<option value="">Persona externa</option>${state.socialProfiles.filter(p=>p.id!==state.user.id).map(p=>`<option value="${p.id}">@${esc(p.username||'usuario')} · ${esc(p.display_name||'Usuario')}</option>`).join('')}`;
+  const splitFriendIds=new Set(state.friendships.filter(f=>f.status==='accepted').map(f=>f.requester_id===state.user.id?f.addressee_id:f.requester_id));
+  const splitPersonOptions=()=>`<option value="">Persona externa</option>${state.socialProfiles.filter(p=>splitFriendIds.has(p.id)).map(p=>`<option value="${p.id}">@${esc(p.username||'usuario')} · ${esc(p.display_name||'Usuario')}</option>`).join('')}`;
   const addSplitRow=(row={})=>{splitList?.insertAdjacentHTML('beforeend',`<div class="split-person-row"><select class="split-user">${splitPersonOptions()}</select><input class="split-name" placeholder="Nombre" value="${esc(row.person_name||'')}"><input class="split-amount" inputmode="decimal" placeholder="0,00" value="${row.amount_cents?Number(row.amount_cents)/100:''}"><button type="button" class="split-remove">×</button></div>`);const el=splitList.lastElementChild;if(row.debtor_user_id)el.querySelector('.split-user').value=row.debtor_user_id;el.querySelector('.split-remove').onclick=()=>{el.remove();recalcSplits()};el.querySelectorAll('input,select').forEach(x=>x.oninput=x.onchange=recalcSplits);recalcSplits();};
   const recalcSplits=()=>{if(!splitSummary)return;const rows=[...splitList.querySelectorAll('.split-person-row')],total=cents(amount.value);if(splitMode==='equal'&&rows.length){const each=Math.floor(total/(rows.length+1));rows.forEach(r=>r.querySelector('.split-amount').value=(each/100).toFixed(2));}const assigned=rows.reduce((sum,r)=>sum+cents(r.querySelector('.split-amount').value),0),remaining=Math.max(0,total-assigned);splitSummary.innerHTML=`Asignado: <strong>${money(assigned)}</strong> · Tu parte/restante: <strong>${money(remaining)}</strong>`;};
   splitToggle?.addEventListener('change',()=>{splitControls.classList.toggle('hidden',!splitToggle.checked);if(splitToggle.checked&&!splitList.children.length)addSplitRow();});
@@ -1142,8 +1143,15 @@ function openTransaction(tx={}){
   const update=()=>{const saving=kind.value==='saving',investment=kind.value==='investment',cryptoPayment=kind.value==='expense'&&String(resource.value).startsWith('crypto:'),fuel=kind.value==='expense'&&!cryptoPayment&&isFuelConcept(concept.value);document.querySelector('#saving-goal-field').classList.toggle('hidden',!saving);splitBox?.classList.toggle('hidden',kind.value!=='expense');document.querySelector('#investment-detail').classList.toggle('hidden',!investment);document.querySelector('#fuel-detail').classList.toggle('hidden',!fuel);document.querySelector('#crypto-payment-detail')?.classList.toggle('hidden',!cryptoPayment);form.elements.payment_method.disabled=cryptoPayment;if(cryptoPayment)form.elements.payment_method.value='bank';if(investment&&form.elements.investment_company&&!form.elements.investment_company.value)form.elements.investment_company.value=concept.value;const selected=state.resources.find(r=>r.id===resource.value),selectedHolding=String(resource.value).startsWith('crypto:')?state.cryptoHoldings.find(h=>h.id===String(resource.value).slice(7)):null;document.querySelector('#piggy-transfer-note').textContent=selected?.type==='piggy'&&(kind.value==='income'||saving)?'Esta aportación se restará automáticamente de la cuenta principal.':selected?.type==='folder'?'Este movimiento afectará al saldo de la cuenta principal.':selectedHolding?`Disponible: ${Number(selectedHolding.quantity).toLocaleString('es-ES',{maximumFractionDigits:8})} ${selectedHolding.symbol}.`:'';syncFuel();syncInvestment();syncCryptoPayment();};
   const syncFuel=()=>{const liters=positive(form.elements.fuel_liters?.value),price=positive(form.elements.fuel_price?.value),km=positive(form.elements.fuel_km?.value),box=document.querySelector('#fuel-calculated');if(!box)return;if(liters&&price){const total=liters*price;amount.value=total.toFixed(2);const consumption=km?liters/km*100:null;box.textContent=`Total calculado: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(total)} (${liters.toLocaleString('es-ES')} L × ${price.toLocaleString('es-ES',{minimumFractionDigits:3,maximumFractionDigits:3})} €/L).${consumption?` Consumo estimado: ${consumption.toLocaleString('es-ES',{maximumFractionDigits:2})} L/100 km.`:''}`;}else box.textContent='Introduce litros y precio por litro para calcular el total.';};
   kind.onchange=()=>{const old=resource.value;resource.innerHTML=resourceOptions(old,kind.value);update()};resource.onchange=update;concept.oninput=()=>{if(kind.value==='investment'&&form.elements.investment_company&&!form.elements.investment_company.dataset.edited)form.elements.investment_company.value=concept.value;update();};form.elements.investment_company?.addEventListener('input',()=>{form.elements.investment_company.dataset.edited='1';concept.value=form.elements.investment_company.value;});form.elements.investment_quantity?.addEventListener('input',syncInvestment);form.elements.investment_unit_price?.addEventListener('input',syncInvestment);form.elements.crypto_unit_price?.addEventListener('input',syncInvestment);form.elements.crypto_quantity?.addEventListener('input',syncInvestment);form.elements.crypto_spend_quantity?.addEventListener('input',syncCryptoPayment);form.elements.crypto_spend_unit_price?.addEventListener('input',syncCryptoPayment);form.elements.crypto_fee?.addEventListener('input',syncInvestment);document.querySelectorAll('[data-fee-mode]').forEach(btn=>btn.onclick=()=>{form.elements.crypto_fee_mode.value=btn.dataset.feeMode;document.querySelectorAll('[data-fee-mode]').forEach(x=>x.classList.toggle('active',x===btn));syncInvestment();});form.elements.fuel_liters?.addEventListener('input',syncFuel);form.elements.fuel_price?.addEventListener('input',syncFuel);form.elements.fuel_km?.addEventListener('input',syncFuel);update();
-  form.onsubmit=async e=>{e.preventDefault();const b=e.submitter,fd=new FormData(form);busy(b,true);try{const kindValue=String(fd.get('kind')),goalId=kindValue==='saving'?(fd.get('saving_goal_id')||null):null;const rawResource=String(fd.get('resource_id')||'');const cryptoPayment=kindValue==='expense'&&rawResource.startsWith('crypto:');const selectedHolding=cryptoPayment?state.cryptoHoldings.find(h=>h.id===rawResource.slice(7)):null;const selectedResourceId=cryptoPayment?(selectedHolding?.resource_id||null):(goalId||rawResource||null),selectedResource=state.resources.find(r=>r.id===selectedResourceId);const fuelActive=kindValue==='expense'&&!cryptoPayment&&isFuelConcept(fd.get('concept'));const investmentActive=kindValue==='investment';const cryptoActive=investmentActive&&isCryptoConcept(fd.get('investment_company')||fd.get('concept'));const liters=fuelActive?positive(fd.get('fuel_liters')):null,price=fuelActive?positive(fd.get('fuel_price')):null,km=fuelActive?positive(fd.get('fuel_km')):null;const investmentCompany=investmentActive?String(fd.get('investment_company')||fd.get('concept')||'').trim():String(fd.get('concept')||'').trim();const investmentIsin=investmentActive?String(fd.get('investment_isin')||'').trim().toUpperCase():null;const investmentQuantity=investmentActive?positive(fd.get('investment_quantity')):null;const investmentUnitPriceCents=investmentActive&&!cryptoActive?cents(fd.get('investment_unit_price')):null;const cryptoSymbol=cryptoActive?String(fd.get('crypto_symbol')||cryptoSymbolFromConcept(investmentCompany)).trim().toUpperCase():null;const cryptoRequestedQty=cryptoActive?cryptoQty(fd.get('crypto_quantity')):null;const cryptoUnitPriceCents=cryptoActive?cents(fd.get('crypto_unit_price')):null;const cryptoFeeCents=cryptoActive?Math.max(0,cents(fd.get('crypto_fee'))):0;const cryptoFeeMode=cryptoActive?String(fd.get('crypto_fee_mode')||'add'):null;const cryptoBaseCents=cryptoActive?Math.round(cryptoRequestedQty*cryptoUnitPriceCents):0;const cryptoEffectiveQty=cryptoActive&&cryptoFeeMode==='subtract'&&cryptoFeeCents>0&&cryptoUnitPriceCents>0?Math.max(0,(cryptoBaseCents-cryptoFeeCents)/cryptoUnitPriceCents):cryptoRequestedQty;const payload={kind:kindValue,category_id:null,merchant:'',payment_method:String(fd.get('payment_method')||'bank'),amount_cents:cents(fd.get('amount')),concept:investmentCompany,occurred_on:fd.get('date'),notes:String(fd.get('notes')||''),investment_isin:investmentIsin,investment_quantity:investmentQuantity,investment_unit_price_cents:investmentUnitPriceCents,crypto_symbol:cryptoSymbol,crypto_quantity:cryptoEffectiveQty,crypto_unit_price_cents:cryptoUnitPriceCents,crypto_fee_cents:cryptoFeeCents,crypto_fee_mode:cryptoFeeMode,fuel_liters:liters,fuel_price_per_liter_milli:price?Math.round(price*1000):null,fuel_km:km,fuel_consumption_l100km:liters&&km?Number((liters/km*100).toFixed(2)):null};if(fuelActive&&(!price||!liters))throw new Error('Indica el precio por litro y los litros repostados.');if(investmentActive){if(!investmentCompany)throw new Error('Indica el nombre de la inversión.');if(cryptoActive){if(!cryptoSymbol)throw new Error('Indica el símbolo de la criptomoneda.');if(!(cryptoRequestedQty>0))throw new Error('La cantidad de cripto debe ser mayor que cero.');if(!(cryptoUnitPriceCents>0))throw new Error('El precio de compra debe ser mayor que cero.');if(cryptoFeeMode==='subtract'&&cryptoFeeCents>=cryptoBaseCents)throw new Error('La comisión no puede ser igual o superior al importe de la compra.');payload.amount_cents=cryptoFeeMode==='add'?cryptoBaseCents+cryptoFeeCents:cryptoBaseCents;payload.investment_isin=null;payload.investment_quantity=null;payload.investment_unit_price_cents=null;}else{if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(investmentIsin||''))throw new Error('El ISIN debe contener 12 caracteres válidos.');if(!(investmentQuantity>0))throw new Error('El número de acciones debe ser mayor que cero.');if(!(investmentUnitPriceCents>0))throw new Error('El precio por acción debe ser mayor que cero.');payload.amount_cents=Math.round(investmentQuantity*investmentUnitPriceCents);}}if(payload.amount_cents<=0)throw new Error('El importe debe ser mayor que cero.');let id=tx.id;if(cryptoPayment){const qty=cryptoQty(fd.get('crypto_spend_quantity')),unit=cents(fd.get('crypto_spend_unit_price'));if(!selectedHolding)throw new Error('Selecciona una criptomoneda disponible.');if(qty<=0||(!editing&&qty>Number(selectedHolding.quantity)))throw new Error('La cantidad no es válida o supera el saldo disponible.');if(unit<=0)throw new Error('Indica un valor por unidad válido.');if(editing&&tx.payment_method==='crypto'){const {error}=await sb.rpc('a2c_update_crypto_payment',{p_transaction_id:tx.id,p_symbol:selectedHolding.symbol,p_quantity:qty,p_unit_price_cents:unit,p_resource_id:selectedHolding.resource_id||null,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes});if(error)throw error;id=tx.id;}else{const {data,error}=await sb.rpc('a2c_spend_crypto',{p_symbol:selectedHolding.symbol,p_quantity:qty,p_unit_price_cents:unit,p_resource_id:selectedHolding.resource_id||null,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes});if(error)throw error;id=data;}}else if(editing&&tx.crypto_symbol&&tx.kind==='investment'){const {error}=await sb.rpc('a2c_update_crypto_purchase',{p_transaction_id:tx.id,p_symbol:payload.crypto_symbol,p_crypto_name:payload.concept,p_quantity:payload.crypto_quantity,p_unit_price_cents:payload.crypto_unit_price_cents,p_fee_cents:payload.crypto_fee_cents,p_fee_mode:payload.crypto_fee_mode,p_resource_id:selectedResourceId});if(error)throw error;}else if(editing){const {error}=await sb.rpc('update_finance_transaction_v4',{p_transaction_id:tx.id,p_kind:payload.kind,p_category_id:null,p_merchant:'',p_payment_method:payload.payment_method,p_amount_cents:payload.amount_cents,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes,p_investment_isin:payload.investment_isin,p_investment_quantity:payload.investment_quantity,p_investment_unit_price_cents:payload.investment_unit_price_cents});if(error)throw error;const {error:extra}=await sb.from('finance_transactions').update({fuel_liters:payload.fuel_liters,fuel_price_per_liter_milli:payload.fuel_price_per_liter_milli,fuel_km:payload.fuel_km,fuel_consumption_l100km:payload.fuel_consumption_l100km,category_id:null,merchant:''}).eq('id',id);if(extra)throw extra;}else if(selectedResource?.type==='piggy'&&(kindValue==='income'||kindValue==='saving')){const {data,error}=await sb.rpc('create_piggy_transfer_v4',{p_piggy_id:selectedResource.id,p_amount_cents:payload.amount_cents,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes,p_payment_method:payload.payment_method});if(error)throw error;id=data;}else{const {data}=await retrySupabase(()=>sb.from('finance_transactions').insert({...payload,creator_id:state.user.id,resource_id:selectedResourceId}).select('id').single());id=data.id;}if(cryptoActive&&!editing){const {error:cryptoError}=await sb.rpc('a2c_record_crypto_purchase',{p_transaction_id:id,p_symbol:payload.crypto_symbol,p_crypto_name:payload.concept,p_quantity:payload.crypto_quantity,p_unit_price_cents:payload.crypto_unit_price_cents,p_fee_cents:payload.crypto_fee_cents,p_fee_mode:payload.crypto_fee_mode,p_resource_id:selectedResourceId});if(cryptoError)throw cryptoError;}const originalFile=pendingReceiptFile||galleryInput?.files?.[0]||null;if(originalFile instanceof File&&originalFile.size){const file=await compressReceipt(originalFile);const ext=(file.type==='image/jpeg'?'jpg':(file.name.split('.').pop()||'img').toLowerCase());const path=`${state.user.id}/${id}/${crypto.randomUUID()}.${ext}`;const {error}=await sb.storage.from('receipts').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});if(error)throw error;const {error:pe}=await sb.from('finance_transactions').update({receipt_path:path}).eq('id',id);if(pe)throw pe;}if(kindValue==='expense'){await sb.from('expense_splits').delete().eq('transaction_id',id).eq('owner_id',state.user.id);if(splitToggle?.checked){const splitRows=[...splitList.querySelectorAll('.split-person-row')].map(r=>({owner_id:state.user.id,transaction_id:id,debtor_user_id:r.querySelector('.split-user').value||null,person_name:String(r.querySelector('.split-name').value||'').trim()||null,amount_cents:cents(r.querySelector('.split-amount').value),status:'pending'})).filter(r=>r.amount_cents>0);if(splitRows.length){const {error:splitError}=await sb.from('expense_splits').insert(splitRows);if(splitError)throw splitError;}}}closeModal();await refresh();toast(editing?'Movimiento actualizado':cryptoPayment?'Pago con cripto registrado':fuelActive?'Repostaje guardado':investmentActive?'Inversión guardada':goalId?'Ahorro asignado al objetivo':'Movimiento guardado');}catch(error){toast(error.message,true)}finally{busy(b,false)}};
-  document.querySelector('#share-tx-modal')?.addEventListener('click',()=>openShareTransaction(tx));
+  form.onsubmit=async e=>{e.preventDefault();const b=e.submitter,fd=new FormData(form);busy(b,true);try{const kindValue=String(fd.get('kind')),goalId=kindValue==='saving'?(fd.get('saving_goal_id')||null):null;const rawResource=String(fd.get('resource_id')||'');const cryptoPayment=kindValue==='expense'&&rawResource.startsWith('crypto:');const selectedHolding=cryptoPayment?state.cryptoHoldings.find(h=>h.id===rawResource.slice(7)):null;const selectedResourceId=cryptoPayment?(selectedHolding?.resource_id||null):(goalId||rawResource||null),selectedResource=state.resources.find(r=>r.id===selectedResourceId);const fuelActive=kindValue==='expense'&&!cryptoPayment&&isFuelConcept(fd.get('concept'));const investmentActive=kindValue==='investment';const cryptoActive=investmentActive&&isCryptoConcept(fd.get('investment_company')||fd.get('concept'));const liters=fuelActive?positive(fd.get('fuel_liters')):null,price=fuelActive?positive(fd.get('fuel_price')):null,km=fuelActive?positive(fd.get('fuel_km')):null;const investmentCompany=investmentActive?String(fd.get('investment_company')||fd.get('concept')||'').trim():String(fd.get('concept')||'').trim();const investmentIsin=investmentActive?String(fd.get('investment_isin')||'').trim().toUpperCase():null;const investmentQuantity=investmentActive?positive(fd.get('investment_quantity')):null;const investmentUnitPriceCents=investmentActive&&!cryptoActive?cents(fd.get('investment_unit_price')):null;const cryptoSymbol=cryptoActive?String(fd.get('crypto_symbol')||cryptoSymbolFromConcept(investmentCompany)).trim().toUpperCase():null;const cryptoRequestedQty=cryptoActive?cryptoQty(fd.get('crypto_quantity')):null;const cryptoUnitPriceCents=cryptoActive?cents(fd.get('crypto_unit_price')):null;const cryptoFeeCents=cryptoActive?Math.max(0,cents(fd.get('crypto_fee'))):0;const cryptoFeeMode=cryptoActive?String(fd.get('crypto_fee_mode')||'add'):null;const cryptoBaseCents=cryptoActive?Math.round(cryptoRequestedQty*cryptoUnitPriceCents):0;const cryptoEffectiveQty=cryptoActive&&cryptoFeeMode==='subtract'&&cryptoFeeCents>0&&cryptoUnitPriceCents>0?Math.max(0,(cryptoBaseCents-cryptoFeeCents)/cryptoUnitPriceCents):cryptoRequestedQty;const payload={kind:kindValue,category_id:null,merchant:'',payment_method:String(fd.get('payment_method')||'bank'),amount_cents:cents(fd.get('amount')),concept:investmentCompany,occurred_on:fd.get('date'),notes:String(fd.get('notes')||''),investment_isin:investmentIsin,investment_quantity:investmentQuantity,investment_unit_price_cents:investmentUnitPriceCents,crypto_symbol:cryptoSymbol,crypto_quantity:cryptoEffectiveQty,crypto_unit_price_cents:cryptoUnitPriceCents,crypto_fee_cents:cryptoFeeCents,crypto_fee_mode:cryptoFeeMode,fuel_liters:liters,fuel_price_per_liter_milli:price?Math.round(price*1000):null,fuel_km:km,fuel_consumption_l100km:liters&&km?Number((liters/km*100).toFixed(2)):null};if(fuelActive&&(!price||!liters))throw new Error('Indica el precio por litro y los litros repostados.');if(investmentActive){if(!investmentCompany)throw new Error('Indica el nombre de la inversión.');if(cryptoActive){if(!cryptoSymbol)throw new Error('Indica el símbolo de la criptomoneda.');if(!(cryptoRequestedQty>0))throw new Error('La cantidad de cripto debe ser mayor que cero.');if(!(cryptoUnitPriceCents>0))throw new Error('El precio de compra debe ser mayor que cero.');if(cryptoFeeMode==='subtract'&&cryptoFeeCents>=cryptoBaseCents)throw new Error('La comisión no puede ser igual o superior al importe de la compra.');payload.amount_cents=cryptoFeeMode==='add'?cryptoBaseCents+cryptoFeeCents:cryptoBaseCents;payload.investment_isin=null;payload.investment_quantity=null;payload.investment_unit_price_cents=null;}else{if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(investmentIsin||''))throw new Error('El ISIN debe contener 12 caracteres válidos.');if(!(investmentQuantity>0))throw new Error('El número de acciones debe ser mayor que cero.');if(!(investmentUnitPriceCents>0))throw new Error('El precio por acción debe ser mayor que cero.');payload.amount_cents=Math.round(investmentQuantity*investmentUnitPriceCents);}}if(payload.amount_cents<=0)throw new Error('El importe debe ser mayor que cero.');let id=tx.id;if(cryptoPayment){const qty=cryptoQty(fd.get('crypto_spend_quantity')),unit=cents(fd.get('crypto_spend_unit_price'));if(!selectedHolding)throw new Error('Selecciona una criptomoneda disponible.');if(qty<=0||(!editing&&qty>Number(selectedHolding.quantity)))throw new Error('La cantidad no es válida o supera el saldo disponible.');if(unit<=0)throw new Error('Indica un valor por unidad válido.');if(editing&&tx.payment_method==='crypto'){const {error}=await sb.rpc('a2c_update_crypto_payment',{p_transaction_id:tx.id,p_symbol:selectedHolding.symbol,p_quantity:qty,p_unit_price_cents:unit,p_resource_id:selectedHolding.resource_id||null,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes});if(error)throw error;id=tx.id;}else{const {data,error}=await sb.rpc('a2c_spend_crypto',{p_symbol:selectedHolding.symbol,p_quantity:qty,p_unit_price_cents:unit,p_resource_id:selectedHolding.resource_id||null,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes});if(error)throw error;id=data;}}else if(editing&&tx.crypto_symbol&&tx.kind==='investment'){const {error}=await sb.rpc('a2c_update_crypto_purchase',{p_transaction_id:tx.id,p_symbol:payload.crypto_symbol,p_crypto_name:payload.concept,p_quantity:payload.crypto_quantity,p_unit_price_cents:payload.crypto_unit_price_cents,p_fee_cents:payload.crypto_fee_cents,p_fee_mode:payload.crypto_fee_mode,p_resource_id:selectedResourceId});if(error)throw error;}else if(editing){const {error}=await sb.rpc('update_finance_transaction_v4',{p_transaction_id:tx.id,p_kind:payload.kind,p_category_id:null,p_merchant:'',p_payment_method:payload.payment_method,p_amount_cents:payload.amount_cents,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes,p_investment_isin:payload.investment_isin,p_investment_quantity:payload.investment_quantity,p_investment_unit_price_cents:payload.investment_unit_price_cents});if(error)throw error;const {error:extra}=await sb.from('finance_transactions').update({fuel_liters:payload.fuel_liters,fuel_price_per_liter_milli:payload.fuel_price_per_liter_milli,fuel_km:payload.fuel_km,fuel_consumption_l100km:payload.fuel_consumption_l100km,category_id:null,merchant:''}).eq('id',id);if(extra)throw extra;}else if(selectedResource?.type==='piggy'&&(kindValue==='income'||kindValue==='saving')){const {data,error}=await sb.rpc('create_piggy_transfer_v4',{p_piggy_id:selectedResource.id,p_amount_cents:payload.amount_cents,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes,p_payment_method:payload.payment_method});if(error)throw error;id=data;}else{const {data}=await retrySupabase(()=>sb.from('finance_transactions').insert({...payload,creator_id:state.user.id,resource_id:selectedResourceId}).select('id').single());id=data.id;}if(cryptoActive&&!editing){const {error:cryptoError}=await sb.rpc('a2c_record_crypto_purchase',{p_transaction_id:id,p_symbol:payload.crypto_symbol,p_crypto_name:payload.concept,p_quantity:payload.crypto_quantity,p_unit_price_cents:payload.crypto_unit_price_cents,p_fee_cents:payload.crypto_fee_cents,p_fee_mode:payload.crypto_fee_mode,p_resource_id:selectedResourceId});if(cryptoError)throw cryptoError;}const originalFile=pendingReceiptFile||galleryInput?.files?.[0]||null;if(originalFile instanceof File&&originalFile.size){const file=await compressReceipt(originalFile);const ext=(file.type==='image/jpeg'?'jpg':(file.name.split('.').pop()||'img').toLowerCase());const path=`${state.user.id}/${id}/${crypto.randomUUID()}.${ext}`;const {error}=await sb.storage.from('receipts').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});if(error)throw error;const {error:pe}=await sb.from('finance_transactions').update({receipt_path:path}).eq('id',id);if(pe)throw pe;}if(kindValue==='expense'){await sb.from('expense_splits').delete().eq('transaction_id',id).eq('owner_id',state.user.id);if(splitToggle?.checked){const splitRows=[...splitList.querySelectorAll('.split-person-row')].map(r=>({owner_id:state.user.id,transaction_id:id,debtor_user_id:r.querySelector('.split-user').value||null,person_name:String(r.querySelector('.split-name').value||'').trim()||null,amount_cents:cents(r.querySelector('.split-amount').value),status:'pending'})).filter(r=>r.amount_cents>0);if(splitRows.length){
+  const {data:createdSplits,error:splitError}=await sb.from('expense_splits').insert(splitRows).select('id,debtor_user_id');
+  if(splitError)throw splitError;
+  for(const split of createdSplits||[]){
+    if(!split.debtor_user_id)continue;
+    const {error:activateError}=await sb.rpc('a2c_activate_expense_split_v53',{p_split_id:split.id});
+    if(activateError)throw activateError;
+  }
+}}}closeModal();await refresh();toast(editing?'Movimiento actualizado':cryptoPayment?'Pago con cripto registrado':fuelActive?'Repostaje guardado':investmentActive?'Inversión guardada':goalId?'Ahorro asignado al objetivo':'Movimiento guardado');}catch(error){toast(error.message,true)}finally{busy(b,false)}};
   document.querySelector('#repeat-tx-modal')?.addEventListener('click',()=>{const copy={...tx,id:null,occurred_on:today(),receipt_path:null,is_transfer:false,transfer_group_id:null,transfer_role:null};openTransaction(copy);});
   document.querySelector('#delete-tx')?.addEventListener('click',async()=>{if(!confirm('¿Borrar este movimiento?'))return;const linked=state.socialPosts.filter(p=>p.transaction_id===tx.id);for(const post of linked){if(post.image_path)await sb.storage.from('social').remove([post.image_path]);await sb.from('social_posts').delete().eq('id',post.id);}if(tx.investment_operation==='sale'){const {error}=await sb.rpc('a2c_delete_stock_sale',{p_transaction_id:tx.id});if(error)return toast(error.message,true);closeModal();await refresh();return toast('Venta eliminada');}const {error}=tx.crypto_symbol?await sb.rpc('a2c_delete_crypto_transaction',{p_transaction_id:tx.id}):await sb.rpc('delete_finance_transaction_v4',{p_transaction_id:tx.id});if(error)return toast(error.message,true);closeModal();await refresh();toast('Movimiento eliminado')});
 }
@@ -2179,405 +2187,159 @@ openNotificationDestination=async function(notification){
 
 
 /* ==========================
-   A2C Finanzas 5.2
-   Gastos compartidos simplificados
+   A2C Finanzas 5.3
+   Mensajes y gastos divididos
    ========================== */
-function a2c52PendingDebts(){
-  return state.expenseSplits.filter(row=>
-    row.debtor_user_id===state.user.id && row.status==='pending'
-  );
-}
-function a2c52AccountOptions(){
-  const options=[
-    `<option value="">Cuenta principal · ${money(mainBalance())}</option>`
-  ];
-  state.resources
-    .filter(r=>r.type==='folder'||r.type==='piggy')
-    .forEach(r=>{
-      options.push(
-        `<option value="${r.id}">${esc(r.name)} · ${money(resourceBalance(r.id))}</option>`
-      );
-    });
-  return options.join('');
-}
-async function openShareTransaction(tx){
-  if(tx.kind!=='expense'){
-    return toast('Solo se pueden compartir gastos.',true);
-  }
-  try{
-    await a2c42LoadFriends();
-  }catch(error){
-    return toast(error.message,true);
-  }
-  if(!a2c42.friends.length){
-    return toast('Añade al menos un amigo antes de compartir.',true);
-  }
-
-  modal(`<form id="a2c52-share-expense">
-    <div class="modal-head">
+function renderMessagesPage(){
+  const unread=a2c42.conversations.reduce((sum,row)=>sum+Number(row.unread_count||0),0);
+  return `<section class="messages-page">
+    <div class="dashboard-head">
       <div>
-        <h2>Compartir gasto</h2>
-        <p class="muted">Se enviará al chat del amigo y recibirá una notificación.</p>
+        <span class="eyebrow">Conversaciones</span>
+        <h1>Mensajes</h1>
+        <p class="muted">${unread?`${unread} mensaje${unread===1?'':'s'} sin leer`:'Habla con tus amigos y gestiona gastos compartidos.'}</p>
       </div>
-      <button type="button" class="close-btn" data-close>×</button>
+      <button type="button" class="btn primary" id="messages-new-chat">Nuevo chat</button>
     </div>
-
-    <article class="a2c52-preview">
-      <div>
-        <strong>${esc(tx.concept||'Gasto')}</strong>
-        <small>${esc(tx.occurred_on)} · Gasto</small>
-      </div>
-      <b>${money(tx.amount_cents)}</b>
-    </article>
-
-    <div class="field">
-      <label>Amigo</label>
-      <select name="friend_id" required>
-        ${a2c42.friends.map(p=>`
-          <option value="${p.id}">
-            ${esc(p.display_name||p.username)} · @${esc(p.username||'usuario')}
-          </option>`).join('')}
-      </select>
+    <div class="wa-conversation-list">
+      ${a2c42.conversations.length?a2c42.conversations.map(c=>`
+        <button type="button" class="wa-conversation-row" data-message-conversation="${c.conversation_id}" data-friend="${c.friend_id}">
+          ${a2c42PersonAvatar(c)}
+          <span class="wa-conversation-info">
+            <strong>${esc(c.display_name||c.username||'Usuario')}</strong>
+            <small>${esc(c.last_message||'Sin mensajes todavía')}</small>
+          </span>
+          <span class="wa-conversation-meta">
+            <small>${c.last_message_at?new Date(c.last_message_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}</small>
+            ${Number(c.unread_count||0)>0?`<b>${Number(c.unread_count)}</b>`:''}
+          </span>
+        </button>`).join(''):'<div class="empty">Todavía no tienes conversaciones.</div>'}
     </div>
-
-    <div class="field">
-      <label>Parte que debe pagar</label>
-      <input
-        name="shared_amount"
-        inputmode="decimal"
-        value="${(Number(tx.amount_cents)/200).toFixed(2).replace('.',',')}"
-        required
-      >
-    </div>
-
-    <div class="notice">
-      El importe quedará pendiente y no descontará saldo al amigo hasta que lo pague.
-    </div>
-
-    <div class="actions">
-      <button type="button" class="btn" data-close>Cancelar</button>
-      <button class="btn primary">Compartir</button>
-    </div>
-
     <style>
-      .a2c52-preview{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #ebe7f1;border-radius:14px;margin-bottom:13px}
-      .a2c52-preview div{flex:1}.a2c52-preview strong,.a2c52-preview small{display:block}
-      .a2c52-preview small{font-size:11px;color:var(--muted);margin-top:3px}
+      .messages-page{padding-bottom:90px}
+      .wa-conversation-list{background:#fff;border:1px solid #ece8ef;border-radius:18px;overflow:hidden}
+      .wa-conversation-row{width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;border:0;border-bottom:1px solid #f0edf2;background:#fff;text-align:left}
+      .wa-conversation-row:last-child{border-bottom:0}.wa-conversation-info{flex:1;min-width:0}
+      .wa-conversation-info strong,.wa-conversation-info small{display:block}.wa-conversation-info small{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+      .wa-conversation-meta{text-align:right}.wa-conversation-meta small{display:block;font-size:10px;color:var(--muted)}
+      .wa-conversation-meta b{display:inline-grid;place-items:center;min-width:21px;height:21px;padding:0 6px;border-radius:99px;background:#7557ff;color:#fff;font-size:10px;margin-top:5px}
     </style>
-  </form>`);
-
-  document.querySelector('#a2c52-share-expense').onsubmit=async event=>{
-    event.preventDefault();
-    const button=event.submitter;
-    const form=new FormData(event.currentTarget);
-    const amount=cents(form.get('shared_amount'));
-
-    if(amount<=0 || amount>Number(tx.amount_cents)){
-      return toast('El importe compartido no es válido.',true);
-    }
-
-    busy(button,true);
-    const {error}=await sb.rpc('a2c_share_expense_with_friend_v52',{
-      p_transaction_id:tx.id,
-      p_friend_id:form.get('friend_id'),
-      p_shared_amount_cents:amount
-    });
-    busy(button,false);
-
-    if(error)return toast(error.message,true);
-
-    closeModal();
-    await refresh();
-    toast('Gasto enviado al amigo.');
-  };
+  </section>`;
 }
 
-function a2c52PendingHistoryMarkup(){
-  const rows=a2c52PendingDebts();
-  if(!rows.length)return '';
-
-  return `<div class="a2c52-pending-history">
-    <div class="section-head">
-      <div>
-        <h3>Pagos pendientes con amigos</h3>
-        <p class="muted">No descuentan saldo hasta que los pagues.</p>
-      </div>
-    </div>
-    ${rows.map(row=>`
-      <button type="button" class="a2c52-debt-row" data-a2c52-pay="${row.id}">
-        <span class="tx-icon expense">⌛</span>
-        <span>
-          <strong>${esc(row.transaction?.concept||'Gasto compartido')}</strong>
-          <small>${esc(row.owner?.display_name||row.person_name||'Amigo')} · Pendiente</small>
-        </span>
-        <b>${money(row.amount_cents)}</b>
-        <em>Pagar</em>
-      </button>`).join('')}
-  </div>
-  <style>
-    .a2c52-pending-history{margin-bottom:15px}
-    .a2c52-debt-row{width:100%;display:flex;align-items:center;gap:10px;padding:10px 8px;border:0;border-bottom:1px solid #eee9f2;background:#fff;text-align:left}
-    .a2c52-debt-row>span:nth-child(2){flex:1;min-width:0}
-    .a2c52-debt-row strong,.a2c52-debt-row small{display:block}
-    .a2c52-debt-row small{font-size:11px;color:var(--muted)}
-    .a2c52-debt-row b{color:#d9851f}.a2c52-debt-row em{font-style:normal;font-size:11px;color:#7557ff}
-  </style>`;
-}
-
-const a2c52RenderActivityBase=renderActivity;
-renderActivity=function(){
-  return a2c52RenderActivityBase().replace(
-    '<form class="filters filters-pro"',
-    `${a2c52PendingHistoryMarkup()}<form class="filters filters-pro"`
-  );
-};
-
-const a2c52BindBase=bind;
+const a2c53BindBase=bind;
 bind=function(){
-  a2c52BindBase();
-  document.querySelectorAll('[data-a2c52-pay]').forEach(button=>{
-    button.onclick=()=>openA2C52Pay(button.dataset.a2c52Pay);
+  a2c53BindBase();
+  document.querySelectorAll('[data-message-conversation]').forEach(button=>{
+    button.onclick=()=>openA2C42Conversation(
+      button.dataset.messageConversation,
+      button.dataset.friend
+    );
   });
+  document.querySelector('#messages-new-chat')?.addEventListener('click',()=>openA2C42SocialHub('friends'));
 };
 
-function openA2C52Pay(splitId,onPaid=null){
+function a2c53AccountOptions(){
+  const rows=[`<option value="">Cuenta principal · ${money(mainBalance())}</option>`];
+  state.resources.filter(r=>r.type==='folder'||r.type==='piggy').forEach(r=>{
+    rows.push(`<option value="${r.id}">${esc(r.name)} · ${money(resourceBalance(r.id))}</option>`);
+  });
+  return rows.join('');
+}
+
+function openA2C53Pay(splitId,onDone=null){
   const split=state.expenseSplits.find(row=>String(row.id)===String(splitId));
-  if(!split)return toast('El pago ya no está disponible.',true);
-
-  modal(`<form id="a2c52-pay-form">
-    <div class="modal-head">
-      <div>
-        <h2>Pagar gasto compartido</h2>
-        <p class="muted">${esc(split.transaction?.concept||'Gasto compartido')}</p>
-      </div>
-      <button type="button" class="close-btn" data-close>×</button>
-    </div>
-
-    <div class="metric">${money(split.amount_cents)}</div>
-
-    <div class="field">
-      <label>Cuenta utilizada</label>
-      <select name="resource_id">${a2c52AccountOptions()}</select>
-    </div>
-
-    <div class="field">
-      <label>Método</label>
-      <select name="payment_method">
-        <option value="bank">Banco</option>
-        <option value="cash">Efectivo</option>
-      </select>
-    </div>
-
-    <div class="notice">
-      Al confirmar, el importe se descontará de tu saldo y se sumará al balance del amigo.
-    </div>
-
-    <div class="actions">
-      <button type="button" class="btn" data-close>Cancelar</button>
-      <button class="btn primary">Confirmar pago</button>
-    </div>
+  modal(`<form id="a2c53-pay-form">
+    <div class="modal-head"><div><h2>Pagar gasto</h2><p class="muted">${esc(split?.transaction?.concept||'Gasto compartido')}</p></div><button type="button" class="close-btn" data-close>×</button></div>
+    <div class="metric">${money(split?.amount_cents||0)}</div>
+    <div class="field"><label>Cuenta</label><select name="resource_id">${a2c53AccountOptions()}</select></div>
+    <div class="field"><label>Método</label><select name="payment_method"><option value="bank">Banco</option><option value="cash">Efectivo</option></select></div>
+    <div class="notice">Al pagar, se restará de tu saldo y se añadirá al balance del amigo.</div>
+    <div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Pagar ahora</button></div>
   </form>`);
-
-  document.querySelector('#a2c52-pay-form').onsubmit=async event=>{
-    event.preventDefault();
-    const button=event.submitter;
-    const form=new FormData(event.currentTarget);
-
-    busy(button,true);
-    const {error}=await sb.rpc('a2c_pay_shared_expense_v52',{
+  document.querySelector('#a2c53-pay-form').onsubmit=async event=>{
+    event.preventDefault();const button=event.submitter,fd=new FormData(event.currentTarget);busy(button,true);
+    const {error}=await sb.rpc('a2c_pay_expense_split_v53',{
       p_split_id:splitId,
-      p_resource_id:form.get('resource_id')||null,
-      p_payment_method:form.get('payment_method')
+      p_resource_id:fd.get('resource_id')||null,
+      p_payment_method:fd.get('payment_method')
     });
-    busy(button,false);
-
-    if(error)return toast(error.message,true);
-
-    closeModal();
-    await refresh();
-    toast('Pago registrado correctamente.');
-    if(onPaid)onPaid();
+    busy(button,false);if(error)return toast(error.message,true);
+    closeModal();await refresh();toast('Pago realizado.');onDone?.();
   };
 }
 
-function openA2C52Manage(split,conversationId,friendId){
-  modal(`<form id="a2c52-manage-form">
-    <div class="modal-head">
-      <div>
-        <h2>Gestionar gasto compartido</h2>
-        <p class="muted">${esc(split.concept||'Gasto compartido')}</p>
-      </div>
-      <button type="button" class="close-btn" data-close>×</button>
-    </div>
-
-    <div class="field">
-      <label>Importe pendiente</label>
-      <input
-        name="amount"
-        inputmode="decimal"
-        value="${(Number(split.split_amount_cents)/100).toFixed(2).replace('.',',')}"
-        required
-      >
-    </div>
-
-    <div class="actions">
-      <button type="button" class="btn" id="a2c52-manual-paid">Registrar pago manual</button>
-      <button class="btn primary">Guardar importe</button>
-    </div>
+function openA2C53Manage(split,conversationId,friendId){
+  modal(`<form id="a2c53-manage-form">
+    <div class="modal-head"><div><h2>Gestionar reparto</h2><p class="muted">${esc(split.concept)}</p></div><button type="button" class="close-btn" data-close>×</button></div>
+    <div class="field"><label>Importe pendiente</label><input name="amount" inputmode="decimal" value="${(Number(split.split_amount_cents)/100).toFixed(2).replace('.',',')}" required></div>
+    <div class="actions"><button type="button" class="btn" id="a2c53-mark-paid">Registrar pago manual</button><button class="btn primary">Guardar</button></div>
   </form>`);
-
-  document.querySelector('#a2c52-manage-form').onsubmit=async event=>{
-    event.preventDefault();
-    const button=event.submitter;
-    const amount=cents(new FormData(event.currentTarget).get('amount'));
-
-    busy(button,true);
-    const {error}=await sb.rpc('a2c_update_shared_expense_v52',{
-      p_split_id:split.split_id,
-      p_amount_cents:amount
-    });
-    busy(button,false);
-
-    if(error)return toast(error.message,true);
-
-    closeModal();
-    await refresh();
-    toast('Importe actualizado.');
-    openA2C42Conversation(conversationId,friendId);
+  document.querySelector('#a2c53-manage-form').onsubmit=async event=>{
+    event.preventDefault();const button=event.submitter,amount=cents(new FormData(event.currentTarget).get('amount'));busy(button,true);
+    const {error}=await sb.rpc('a2c_update_expense_split_v53',{p_split_id:split.split_id,p_amount_cents:amount});
+    busy(button,false);if(error)return toast(error.message,true);
+    closeModal();await refresh();openA2C42Conversation(conversationId,friendId);
   };
-
-  document.querySelector('#a2c52-manual-paid').onclick=async()=>{
-    const confirmed=confirm(
-      `¿Confirmas que el amigo ya ha pagado ${money(split.split_amount_cents)}?`
-    );
-    if(!confirmed)return;
-
-    const {error}=await sb.rpc('a2c_mark_shared_expense_paid_v52',{
-      p_split_id:split.split_id,
-      p_payment_method:'cash'
-    });
-
+  document.querySelector('#a2c53-mark-paid').onclick=async()=>{
+    if(!confirm(`¿Confirmas que ya te ha pagado ${money(split.split_amount_cents)}?`))return;
+    const {error}=await sb.rpc('a2c_mark_expense_split_paid_v53',{p_split_id:split.split_id,p_payment_method:'cash'});
     if(error)return toast(error.message,true);
-
-    closeModal();
-    await refresh();
-    toast('Pago manual registrado.');
-    openA2C42Conversation(conversationId,friendId);
+    closeModal();await refresh();toast('Pago manual registrado.');openA2C42Conversation(conversationId,friendId);
   };
 }
 
 openA2C42Conversation=async function(conversationId,friendId){
-  const friend=
-    a2c42.friends.find(p=>String(p.id)===String(friendId))||
-    a2c42.conversations.find(c=>String(c.friend_id)===String(friendId))||
-    {};
-
-  const [messagesResult,sharesResult]=await Promise.all([
-    sb.rpc('a2c_list_messages_v42',{
-      p_conversation_id:conversationId,
-      p_limit:200
-    }),
-    sb.rpc('a2c_list_conversation_transaction_shares_v52',{
-      p_conversation_id:conversationId
-    })
+  const friend=a2c42.friends.find(p=>String(p.id)===String(friendId))
+    ||a2c42.conversations.find(c=>String(c.friend_id)===String(friendId))
+    ||{};
+  const [messagesResult,splitsResult]=await Promise.all([
+    sb.rpc('a2c_list_messages_v42',{p_conversation_id:conversationId,p_limit:200}),
+    sb.rpc('a2c_list_conversation_splits_v53',{p_conversation_id:conversationId})
   ]);
-
   if(messagesResult.error)return toast(messagesResult.error.message,true);
-  if(sharesResult.error)return toast(sharesResult.error.message,true);
+  if(splitsResult.error)return toast(splitsResult.error.message,true);
+  const messages=messagesResult.data||[],splits=splitsResult.data||[];
 
-  const messages=messagesResult.data||[];
-  const shares=sharesResult.data||[];
-
-  a2c42.activeConversation=conversationId;
-
-  modal(`<div class="modal-head">
-      <div>
-        <h2>${esc(friend.display_name||friend.username||'Conversación')}</h2>
-        <p class="muted">@${esc(friend.username||'usuario')} · conversación privada</p>
-      </div>
-      <button class="close-btn" data-close>×</button>
+  modal(`<div class="wa-chat-shell">
+    <div class="wa-chat-header">
+      <button class="wa-back" data-close>‹</button>
+      ${a2c42PersonAvatar(friend)}
+      <div><strong>${esc(friend.display_name||friend.username||'Conversación')}</strong><small>@${esc(friend.username||'usuario')}</small></div>
     </div>
-
-    <section class="a2c42-chat">
-      <div class="a2c42-messages" id="a2c42-message-list">
-        ${messages.map(message=>`
-          <article class="a2c42-message ${message.mine?'mine':''}">
-            <p>${esc(message.body)}</p>
-            <small>${new Date(message.created_at).toLocaleString('es-ES')}</small>
-          </article>`).join('')}
-
-        ${shares.map(share=>`
-          <article class="a2c52-chat-share">
-            <div>
-              <small>Gasto compartido</small>
-              <strong>${esc(share.concept)}</strong>
-              <span>${esc(share.occurred_on)} · Total ${money(share.transaction_amount_cents)}</span>
-            </div>
-            <div class="a2c52-chat-debt">
-              <b>${money(share.split_amount_cents)}</b>
-              <small>${share.split_status==='paid'?'Pagado':'Pendiente'}</small>
-              ${share.mine_to_pay
-                ? `<button class="btn primary" data-chat-pay="${share.split_id}">Pagar</button>`
-                : ''}
-              ${share.mine_to_manage
-                ? `<button class="btn" data-chat-manage="${share.split_id}">Editar</button>`
-                : ''}
-            </div>
-          </article>`).join('')}
-
-        ${!messages.length&&!shares.length
-          ? '<div class="empty compact">Escribe el primer mensaje.</div>'
-          : ''}
-      </div>
-
-      <form class="a2c42-compose" id="a2c42-compose">
-        <textarea name="body" maxlength="4000" required placeholder="Escribe un mensaje…"></textarea>
-        <button class="btn primary">Enviar</button>
-      </form>
-    </section>
-
+    <div class="wa-chat-body" id="a2c42-message-list">
+      ${messages.map(m=>`<article class="wa-bubble ${m.mine?'mine':'theirs'}"><p>${esc(m.body)}</p><small>${new Date(m.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</small></article>`).join('')}
+      ${splits.map(s=>`<article class="wa-expense-card">
+        <div><small>GASTO COMPARTIDO</small><strong>${esc(s.concept)}</strong><span>Total ${money(s.transaction_amount_cents)} · Tu parte ${money(s.split_amount_cents)}</span></div>
+        <div class="wa-expense-actions"><b class="${s.split_status==='paid'?'paid':'pending'}">${s.split_status==='paid'?'Pagado':'Pendiente'}</b>
+        ${s.mine_to_pay?`<button class="btn primary" data-wa-pay="${s.split_id}">Pagar</button>`:''}
+        ${s.mine_to_manage?`<button class="btn" data-wa-manage="${s.split_id}">Editar</button>`:''}</div>
+      </article>`).join('')}
+    </div>
+    <form class="wa-compose" id="a2c42-compose">
+      <textarea name="body" maxlength="4000" required placeholder="Mensaje"></textarea>
+      <button class="wa-send" aria-label="Enviar">➤</button>
+    </form>
     <style>
-      .a2c52-chat-share{display:flex;gap:10px;align-items:center;padding:11px;border:1px solid #ded6ed;border-radius:14px;background:#fff}
-      .a2c52-chat-share>div:first-child{flex:1;min-width:0}
-      .a2c52-chat-share small,.a2c52-chat-share strong,.a2c52-chat-share span{display:block}
-      .a2c52-chat-share small{font-size:10px;color:var(--muted)}
-      .a2c52-chat-share span{font-size:11px;color:var(--muted);margin-top:3px}
-      .a2c52-chat-debt{text-align:right}.a2c52-chat-debt b{display:block;color:#d9851f}
-      .a2c52-chat-debt .btn{margin-top:5px;padding:6px 10px}
-    </style>`,true);
+      #modal .modal-card.wide{padding:0;overflow:hidden}.wa-chat-shell{height:min(78vh,720px);display:flex;flex-direction:column;background:#efeae2}
+      .wa-chat-header{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border-bottom:1px solid #e8e4e8}.wa-chat-header>div{flex:1}.wa-chat-header strong,.wa-chat-header small{display:block}.wa-chat-header small{font-size:11px;color:var(--muted)}
+      .wa-back{border:0;background:transparent;font-size:34px;line-height:1}.wa-chat-body{flex:1;overflow:auto;padding:14px 12px;display:flex;flex-direction:column;gap:7px;background-color:#efeae2;background-image:radial-gradient(#d9d2c9 0.7px,transparent 0.7px);background-size:18px 18px}
+      .wa-bubble{max-width:82%;padding:8px 10px 6px;border-radius:9px;box-shadow:0 1px 1px rgba(0,0,0,.08)}.wa-bubble p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.wa-bubble small{display:block;text-align:right;font-size:9px;color:#777;margin-top:3px}
+      .wa-bubble.mine{align-self:flex-end;background:#dcf8c6;border-top-right-radius:2px}.wa-bubble.theirs{align-self:flex-start;background:#fff;border-top-left-radius:2px}
+      .wa-expense-card{display:flex;align-items:center;gap:10px;background:#fff;padding:11px;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.1)}.wa-expense-card>div:first-child{flex:1}.wa-expense-card small,.wa-expense-card strong,.wa-expense-card span{display:block}.wa-expense-card small{font-size:9px;color:#7557ff}.wa-expense-card span{font-size:11px;color:#666;margin-top:3px}.wa-expense-actions{text-align:right}.wa-expense-actions b{display:block;font-size:10px}.wa-expense-actions b.pending{color:#d9851f}.wa-expense-actions b.paid{color:#16835c}.wa-expense-actions .btn{padding:6px 9px;margin-top:5px}
+      .wa-compose{display:flex;align-items:flex-end;gap:7px;padding:9px;background:#f0f2f5}.wa-compose textarea{flex:1;min-height:42px;max-height:110px;border:0;border-radius:22px;padding:11px 15px;resize:none;background:#fff}.wa-send{width:44px;height:44px;border:0;border-radius:50%;background:#7557ff;color:#fff;font-size:18px}
+    </style>
+  </div>`,true);
 
-  const list=document.querySelector('#a2c42-message-list');
-  list.scrollTop=list.scrollHeight;
-
-  document.querySelectorAll('[data-chat-pay]').forEach(button=>{
-    button.onclick=()=>openA2C52Pay(
-      button.dataset.chatPay,
-      ()=>openA2C42Conversation(conversationId,friendId)
-    );
+  const list=document.querySelector('#a2c42-message-list');list.scrollTop=list.scrollHeight;
+  document.querySelectorAll('[data-wa-pay]').forEach(button=>button.onclick=()=>openA2C53Pay(button.dataset.waPay,()=>openA2C42Conversation(conversationId,friendId)));
+  document.querySelectorAll('[data-wa-manage]').forEach(button=>{
+    const split=splits.find(row=>String(row.split_id)===String(button.dataset.waManage));
+    button.onclick=()=>openA2C53Manage(split,conversationId,friendId);
   });
-
-  document.querySelectorAll('[data-chat-manage]').forEach(button=>{
-    const share=shares.find(
-      row=>String(row.split_id)===String(button.dataset.chatManage)
-    );
-    button.onclick=()=>openA2C52Manage(share,conversationId,friendId);
-  });
-
   document.querySelector('#a2c42-compose').onsubmit=async event=>{
-    event.preventDefault();
-    const button=event.submitter;
-    const body=String(new FormData(event.currentTarget).get('body')||'').trim();
-    if(!body)return;
-
-    busy(button,true);
-    const {error}=await sb.rpc('a2c_send_message_v42',{
-      p_friend_id:friendId,
-      p_body:body
-    });
-    busy(button,false);
-
-    if(error)return toast(error.message,true);
-
-    openA2C42Conversation(conversationId,friendId);
+    event.preventDefault();const button=event.submitter,body=String(new FormData(event.currentTarget).get('body')||'').trim();if(!body)return;
+    busy(button,true);const {error}=await sb.rpc('a2c_send_message_v42',{p_friend_id:friendId,p_body:body});busy(button,false);
+    if(error)return toast(error.message,true);openA2C42Conversation(conversationId,friendId);
   };
 };
