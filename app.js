@@ -1632,7 +1632,7 @@ function openProfile(){
     <div class="profile-photo-editor">${avatarMarkup(state.profile,'profile-avatar-large')}<div><label class="btn receipt-source-btn" for="avatar-file">Cambiar foto</label><input class="receipt-file-input" id="avatar-file" name="avatar" type="file" accept="image/*"><button type="button" class="text-btn ${state.profile.avatar_path?'':'hidden'}" id="remove-avatar">Eliminar foto</button><small class="muted" id="avatar-selection">Imagen cuadrada, comprimida automáticamente.</small></div></div>
     <div class="field"><label>Nombre</label><input name="name" required minlength="2" maxlength="80" value="${esc(state.profile.display_name||'')}"></div><div class="field"><label>Nombre de usuario</label><div class="input-prefix"><span>@</span><input name="username" required minlength="3" maxlength="30" pattern="[a-z0-9._]+" value="${esc(state.profile.username||'')}" placeholder="abel.atero"></div><small class="muted">Solo minúsculas, números, punto y guion bajo.</small></div><div class="field"><label>Privacidad</label><select name="is_public"><option value="true" ${state.profile.is_public!==false?'selected':''}>Cuenta pública</option><option value="false" ${state.profile.is_public===false?'selected':''}>Cuenta privada</option></select></div><div class="field"><label>Nueva contraseña</label><input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password"></div><div class="a2c41-profile-menu">
       <button type="button" class="a2c41-profile-option" id="a2c41-control-financial"><span>◫</span><div><strong>Control financiero</strong><small>Reglas, categorías y presupuestos</small></div><em>›</em></button>
-      <button type="button" class="a2c41-profile-option" id="a2c41-profile-notifications"><span>◉</span><div><strong>Notificaciones</strong><small>Configura pagos y avisos</small></div><em>›</em></button>
+      ${window.A2CNative?`<button type="button" class="a2c41-profile-option" id="a2c41-profile-notifications"><span>◉</span><div><strong>Notificaciones</strong><small>Configura pagos y avisos</small></div><em>›</em></button>`:''}
       ${window.A2CNative?`<button type="button" class="a2c41-profile-option" id="android-native-settings"><span>⌁</span><div><strong>Pagos y avisos Android</strong><small>Detección, permisos y diagnóstico</small></div><em>›</em></button>`:''}
       <button type="button" class="a2c41-profile-option" id="a2c41-profile-settings"><span>⚙</span><div><strong>Ajustes</strong><small>Copias de seguridad y aplicación Android</small></div><em>›</em></button>
     </div><style>
@@ -1644,7 +1644,7 @@ function openProfile(){
     </style><div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`);
   document.querySelector('#android-native-settings')?.addEventListener('click',()=>window.A2CNative?.openAndroidSettings());
   document.querySelector('#a2c41-control-financial')?.addEventListener('click',()=>{closeModal();openA2C40Control('rules')});
-  document.querySelector('#a2c41-profile-notifications')?.addEventListener('click',()=>{closeModal();openA2C40Control('notifications')});
+  document.querySelector('#a2c41-profile-notifications')?.addEventListener('click',()=>{if(window.A2CNative){closeModal();openA2C40Control('notifications')}});
   document.querySelector('#a2c41-profile-settings')?.addEventListener('click',()=>{closeModal();openA2C41Settings()});
   const form=document.querySelector('#profile-form'),fileInput=document.querySelector('#avatar-file'),selection=document.querySelector('#avatar-selection');let removeAvatar=false;
   fileInput.onchange=()=>{const f=fileInput.files?.[0];if(f){selection.textContent=f.name;removeAvatar=false;}};
@@ -1859,7 +1859,8 @@ function a2c40BudgetTab(){
  return `<h3>Presupuestos inteligentes</h3><div class="a2c40-list">${state.budgets.filter(b=>b.period_month===currentMonthKey()).map(b=>`<article class="a2c40-row"><span><strong>${esc(b.name)}</strong><small>${b.weekly_limit_cents?`Límite semanal: ${money(b.weekly_limit_cents)}`:'Sin límite semanal'} · ${b.rollover_enabled?'Acumula sobrante':'No acumula sobrante'}</small></span><button class="btn" data-advanced-budget="${b.id}">Configurar</button></article>`).join('')||'<div class="empty compact">No hay presupuestos este mes.</div>'}</div>`;
 }
 function openA2C40Control(tab='pending'){
-  const labels={pending:'Pagos',rules:'Reglas',categories:'Categorías',budgets:'Presupuestos',notifications:'Notificaciones',shared:'Compartido',backup:'Copias'};
+  const labels={pending:'Pagos',rules:'Reglas',categories:'Categorías',budgets:'Presupuestos',shared:'Compartido',backup:'Copias'};
+  if(window.A2CNative) labels.notifications='Notificaciones';
   modal(`<style>
   .a2c40-tabs{display:flex;gap:6px;overflow:auto;padding-bottom:8px}.a2c40-tabs button{border:0;border-radius:999px;padding:9px 12px;background:#f0edf7;white-space:nowrap}.a2c40-tabs button.active{background:#211a31;color:#fff}.a2c40-panel{margin-top:12px}.a2c40-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px}.a2c40-toolbar h3{margin:0}.a2c40-list{display:grid;gap:8px;margin-top:12px}.a2c40-row{display:flex;align-items:center;gap:10px;border:1px solid #ece9f2;border-radius:14px;padding:10px;background:#fff}.a2c40-row>span{min-width:0;flex:1}.a2c40-row strong,.a2c40-row small,.a2c40-row em{display:block}.a2c40-row small{font-size:11px;color:var(--muted)}.a2c40-row em{font-size:10px;color:#6a53b2;font-style:normal;margin-top:3px}.a2c40-category-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:12px}.a2c40-category{display:flex;align-items:center;gap:10px;text-align:left;border:1px solid #ece9f2;border-left:4px solid var(--cat);border-radius:14px;padding:11px;background:#fff}.a2c40-category i{font-size:24px;font-style:normal}.a2c40-category span{min-width:0}.a2c40-category strong,.a2c40-category small{display:block;overflow:hidden;text-overflow:ellipsis}.a2c40-category small{font-size:10px;color:var(--muted);white-space:nowrap}.a2c40-switches{display:grid;gap:7px;margin:12px 0}.a2c40-switches label{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid #ece9f2;border-radius:13px}.a2c40-backup-actions{display:grid;gap:9px;margin:16px 0}
   </style><div class="modal-head"><div><span class="eyebrow">Gestión avanzada</span><h2>Control financiero</h2></div><button class="close-btn" data-close>×</button></div><nav class="a2c40-tabs">${Object.entries(labels).map(([key,label])=>`<button data-a2c40-tab="${key}" class="${key===tab?'active':''}">${label}</button>`).join('')}</nav><section class="a2c40-panel" id="a2c40-panel"></section>`,true);
@@ -1936,8 +1937,7 @@ openAdmin=function(){
    A2C Finanzas 4.1
    Perfil, actividad y ajustes
    ========================== */
-const A2C_ANDROID_RELEASE_URL='https://github.com/abelaac-alt/a2c-finanzas-android/releases/latest';
-const A2C_ANDROID_REPOSITORY_URL='https://github.com/abelaac-alt/a2c-finanzas-android';
+const A2C_ANDROID_DIRECT_DOWNLOAD='./downloads/A2C-Finanzas.apk';
 
 function a2c41PendingCount(){
   return a2c40.pending.filter(row=>row.status==='pending').length;
@@ -1973,8 +1973,7 @@ function openA2C41Settings(){
   modal(`<div class="modal-head"><div><h2>Ajustes</h2><p class="muted">Aplicación, copias y datos</p></div><button class="close-btn" data-close>×</button></div>
     <div class="a2c41-settings-list">
       <button type="button" id="a2c41-backups"><span>↻</span><div><strong>Copias de seguridad</strong><small>Exportar, importar y descargar CSV</small></div><em>›</em></button>
-      <a href="${A2C_ANDROID_RELEASE_URL}" target="_blank" rel="noopener" id="a2c41-download-android"><span>↓</span><div><strong>Descargar aplicación Android</strong><small>Abre la última versión publicada</small></div><em>›</em></a>
-      <a href="${A2C_ANDROID_REPOSITORY_URL}" target="_blank" rel="noopener"><span>⌘</span><div><strong>Proyecto Android</strong><small>Versiones y código en GitHub</small></div><em>›</em></a>
+      <a href="${A2C_ANDROID_DIRECT_DOWNLOAD}" download="A2C-Finanzas.apk" id="a2c41-download-android"><span>↓</span><div><strong>Descargar aplicación Android</strong><small>Descarga directa desde A2C Finanzas</small></div><em>›</em></a>
     </div>
     <style>
       .a2c41-settings-list{display:grid;gap:9px}.a2c41-settings-list button,.a2c41-settings-list a{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid #ebe7f1;border-radius:14px;background:#fff;color:inherit;text-decoration:none;text-align:left}
