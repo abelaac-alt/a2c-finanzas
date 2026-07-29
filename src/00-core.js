@@ -625,8 +625,30 @@ function mainBalance(){
     })
     .reduce((s,t)=>s+(t.kind==='income'?Number(t.amount_cents):-Number(t.amount_cents)),0);
 }
+
+const A2C_SHARED_TX_STYLE=`<style>
+.tx-split-badge.pending{background:#fff3df;color:#a46000}
+.tx-split-badge.paid{background:#e8f7ef;color:#14724e}
+.a2c54-main-split-list{display:grid;gap:7px;margin-top:11px}
+.a2c54-main-split-row{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid #ebe7f1;border-radius:13px;background:#fff}
+.a2c54-main-split-row>span{flex:1;min-width:0}
+.a2c54-main-split-row strong,.a2c54-main-split-row small{display:block}
+.a2c54-main-split-row small{font-size:10px;color:var(--muted);margin-top:2px}
+.a2c54-main-split-row b.pending{color:#c27711}.a2c54-main-split-row b.paid{color:#16835c}
+.a2c54-main-split-actions{display:flex;gap:5px}.a2c54-main-split-actions .btn{padding:6px 8px;font-size:10px}
+</style>`;
+
 function txRow(tx){
-  const splitCount=state.expenseSplits.filter(row=>row.transaction_id===tx.id&&row.owner_id===state.user.id).length;
+  const txSplits=state.expenseSplits.filter(row=>row.transaction_id===tx.id&&row.owner_id===state.user.id);
+  const splitCount=txSplits.length;
+  const pendingSplits=txSplits.filter(row=>row.status==='pending');
+  const paidSplits=txSplits.filter(row=>row.status==='paid');
+  const pendingSplitAmount=pendingSplits.reduce((sum,row)=>sum+Number(row.amount_cents||0),0);
+  const sharedStatus=splitCount
+    ? pendingSplits.length
+      ? `<span class="tx-split-badge pending">Compartido · deben ${money(pendingSplitAmount)}</span>`
+      : `<span class="tx-split-badge paid">Compartido · liquidado</span>`
+    : '';
   const space=tx.resource?.name?esc(tx.resource.name):'Cuenta principal';
   const payment=tx.payment_method==='cash'?'Efectivo':tx.payment_method==='crypto'?'Cripto':'Banco';
   const symbol=tx.kind==='income'?'↗':tx.kind==='expense'?'↘':tx.kind==='investment'?'◆':'◎';
@@ -636,7 +658,7 @@ function txRow(tx){
   return `<article class="transaction-row clickable" data-edit-tx="${tx.id}" tabindex="0">
     <div class="transaction-icon ${tx.kind}">${symbol}</div>
     <div class="transaction-copy"><strong>${esc(tx.concept)}</strong><small>${esc(tx.occurred_on)} · ${space} · ${payment}${tx.is_transfer?' · Traspaso':''}${fuel}${investment}${crypto}</small></div>
-    <div class="transaction-tail"><b class="${tx.kind}">${tx.kind==='income'?'+':'−'}${money(tx.amount_cents)}</b><div class="transaction-mini-actions">${splitCount?`<span class="tx-split-badge">${splitCount} personas</span>`:''}${tx.receipt_path?`<button type="button" class="receipt-thumb-btn" data-receipt-path="${esc(tx.receipt_path)}" aria-label="Ver imagen adjunta" title="Ver imagen">🖼️</button>`:''}</div></div>
+    <div class="transaction-tail"><b class="${tx.kind}">${tx.kind==='income'?'+':'−'}${money(tx.amount_cents)}</b><div class="transaction-mini-actions">${sharedStatus}${tx.receipt_path?`<button type="button" class="receipt-thumb-btn" data-receipt-path="${esc(tx.receipt_path)}" aria-label="Ver imagen adjunta" title="Ver imagen">🖼️</button>`:''}</div></div>
   </article>`;
 }
 
@@ -1135,7 +1157,28 @@ function openTransaction(tx={}){
   document.querySelector('#add-split-person')?.addEventListener('click',()=>addSplitRow());
   document.querySelectorAll('[data-split-mode]').forEach(b=>b.onclick=()=>{splitMode=b.dataset.splitMode;document.querySelectorAll('[data-split-mode]').forEach(x=>x.classList.toggle('active',x===b));recalcSplits()});
   amount.addEventListener('input',recalcSplits);
-  if(existingSplits.length){splitToggle.checked=true;splitControls.classList.remove('hidden');existingSplits.forEach(addSplitRow);}
+  if(existingSplits.length){
+    splitToggle.checked=true;
+    splitControls.classList.remove('hidden');
+    existingSplits.filter(row=>row.status!=='paid').forEach(addSplitRow);
+    splitBox?.insertAdjacentHTML('beforeend',`${A2C_SHARED_TX_STYLE}<div class="a2c54-main-split-list">
+      ${existingSplits.map(row=>{
+        const person=row.debtor?.display_name||row.person_name||'Persona';
+        return `<article class="a2c54-main-split-row">
+          <span><strong>${esc(person)}</strong><small>${row.status==='paid'?(row.paid_manually?'Liquidado manualmente':'Pagado por el amigo'):'Pendiente de pago'}</small></span>
+          <b class="${row.status==='paid'?'paid':'pending'}">${money(row.amount_cents)}</b>
+          ${row.status==='pending'?`<div class="a2c54-main-split-actions">
+            <button type="button" class="btn" data-a2c54-main-edit="${row.id}">Editar</button>
+            <button type="button" class="btn primary" data-a2c54-main-paid="${row.id}">Liquidar</button>
+            <button type="button" class="btn danger" data-a2c54-main-delete="${row.id}">Eliminar</button>
+          </div>`:''}
+        </article>`;
+      }).join('')}
+    </div>`);
+    document.querySelectorAll('[data-a2c54-main-edit]').forEach(button=>button.onclick=()=>openA2C54EditSplit(button.dataset.a2c54MainEdit,tx.id));
+    document.querySelectorAll('[data-a2c54-main-paid]').forEach(button=>button.onclick=()=>a2c54SettleSplit(button.dataset.a2c54MainPaid,tx.id));
+    document.querySelectorAll('[data-a2c54-main-delete]').forEach(button=>button.onclick=()=>a2c54DeleteSplit(button.dataset.a2c54MainDelete,tx.id));
+  }
   const syncInvestment=()=>{const box=document.querySelector('#investment-calculated');if(!box)return;const crypto=isCryptoConcept(form.elements.investment_company?.value||concept.value);document.querySelector('#stock-investment-fields')?.classList.toggle('hidden',crypto);document.querySelector('#crypto-investment-fields')?.classList.toggle('hidden',!crypto);if(crypto){const symbol=cryptoSymbolFromConcept(form.elements.investment_company?.value||concept.value);if(symbol&&!form.elements.crypto_symbol.value)form.elements.crypto_symbol.value=symbol;const quantity=cryptoQty(form.elements.crypto_quantity?.value),unit=decimal(form.elements.crypto_unit_price?.value),fee=decimal(form.elements.crypto_fee?.value),mode=form.elements.crypto_fee_mode?.value||'add';if(quantity>0&&unit>0){const base=quantity*unit,total=mode==='add'?base+Math.max(0,fee):base;const received=mode==='subtract'&&fee>0?Math.max(0,(base-fee)/unit):quantity;amount.value=total.toFixed(2);box.textContent=`Total: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(total)} · Recibirás ${received.toLocaleString('es-ES',{maximumFractionDigits:8})} ${form.elements.crypto_symbol.value||symbol}.`;}else box.textContent='Introduce precio y cantidad para calcular la compra.';return;}const quantity=positive(form.elements.investment_quantity?.value),unitPrice=positive(form.elements.investment_unit_price?.value);if(quantity&&unitPrice){const total=quantity*unitPrice;amount.value=total.toFixed(2);box.textContent=`Total calculado: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(total)} (${quantity.toLocaleString('es-ES',{maximumFractionDigits:6})} acciones × ${unitPrice.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:4})} €).`;}else box.textContent='Introduce el número de acciones y el precio para calcular el total.';};
   const syncCryptoPayment=()=>{const box=document.querySelector('#crypto-payment-calculated');if(!box)return;const holding=String(resource.value).startsWith('crypto:')?state.cryptoHoldings.find(h=>h.id===String(resource.value).slice(7)):null;const qty=cryptoQty(form.elements.crypto_spend_quantity?.value),unit=positive(form.elements.crypto_spend_unit_price?.value);if(holding&&qty>0&&unit>0){amount.value=(qty*unit).toFixed(2);box.textContent=`Pagarás ${qty.toLocaleString('es-ES',{maximumFractionDigits:8})} ${holding.symbol} · Valor: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(qty*unit)}.`;}else box.textContent='Selecciona una criptomoneda e indica cantidad y valor.';};
   const update=()=>{const saving=kind.value==='saving',investment=kind.value==='investment',cryptoPayment=kind.value==='expense'&&String(resource.value).startsWith('crypto:'),fuel=kind.value==='expense'&&!cryptoPayment&&isFuelConcept(concept.value);document.querySelector('#saving-goal-field').classList.toggle('hidden',!saving);splitBox?.classList.toggle('hidden',kind.value!=='expense');document.querySelector('#investment-detail').classList.toggle('hidden',!investment);document.querySelector('#fuel-detail').classList.toggle('hidden',!fuel);document.querySelector('#crypto-payment-detail')?.classList.toggle('hidden',!cryptoPayment);form.elements.payment_method.disabled=cryptoPayment;if(cryptoPayment)form.elements.payment_method.value='bank';if(investment&&form.elements.investment_company&&!form.elements.investment_company.value)form.elements.investment_company.value=concept.value;const selected=state.resources.find(r=>r.id===resource.value),selectedHolding=String(resource.value).startsWith('crypto:')?state.cryptoHoldings.find(h=>h.id===String(resource.value).slice(7)):null;document.querySelector('#piggy-transfer-note').textContent=selected?.type==='piggy'&&(kind.value==='income'||saving)?'Esta aportación se restará automáticamente de la cuenta principal.':selected?.type==='folder'?'Este movimiento afectará al saldo de la cuenta principal.':selectedHolding?`Disponible: ${Number(selectedHolding.quantity).toLocaleString('es-ES',{maximumFractionDigits:8})} ${selectedHolding.symbol}.`:'';syncFuel();syncInvestment();syncCryptoPayment();};

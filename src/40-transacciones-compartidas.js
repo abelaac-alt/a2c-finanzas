@@ -3,6 +3,43 @@
    A2C Finanzas 5.3
    Mensajes y gastos divididos
    ========================== */
+
+function a2c54FindSplit(splitId){
+  return state.expenseSplits.find(row=>String(row.id)===String(splitId));
+}
+function openA2C54EditSplit(splitId,transactionId=null,onDone=null){
+  const split=a2c54FindSplit(splitId);
+  if(!split)return toast('El reparto ya no está disponible.',true);
+  modal(`<form id="a2c54-edit-split-form">
+    <div class="modal-head"><div><h2>Editar parte compartida</h2><p class="muted">${esc(split.transaction?.concept||'Gasto compartido')}</p></div><button type="button" class="close-btn" data-close>×</button></div>
+    <div class="field"><label>Importe pendiente</label><input name="amount" inputmode="decimal" value="${(Number(split.amount_cents)/100).toFixed(2).replace('.',',')}" required></div>
+    <div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div>
+  </form>`);
+  document.querySelector('#a2c54-edit-split-form').onsubmit=async event=>{
+    event.preventDefault();const button=event.submitter,amount=cents(new FormData(event.currentTarget).get('amount'));
+    busy(button,true);const {error}=await sb.rpc('a2c_update_expense_split_v53',{p_split_id:splitId,p_amount_cents:amount});busy(button,false);
+    if(error)return toast(error.message,true);
+    closeModal();await refresh();toast('Importe actualizado.');
+    if(onDone)onDone();else if(transactionId){const tx=state.transactions.find(row=>row.id===transactionId);if(tx)openTransaction(tx);}
+  };
+}
+async function a2c54SettleSplit(splitId,transactionId=null,onDone=null){
+  const split=a2c54FindSplit(splitId);
+  if(!split)return toast('El reparto ya no está disponible.',true);
+  if(!confirm(`¿Confirmas que quieres liquidar manualmente ${money(split.amount_cents)}? Se aumentará tu balance, pero no se descontará del saldo del amigo.`))return;
+  const {error}=await sb.rpc('a2c_mark_expense_split_paid_v53',{p_split_id:splitId,p_payment_method:'cash'});
+  if(error)return toast(error.message,true);
+  closeModal();await refresh();toast('Reparto liquidado manualmente.');
+  if(onDone)onDone();else if(transactionId){const tx=state.transactions.find(row=>row.id===transactionId);if(tx)openTransaction(tx);}
+}
+async function a2c54DeleteSplit(splitId,transactionId=null,onDone=null){
+  if(!confirm('¿Eliminar este reparto compartido? El amigo dejará de tenerlo pendiente.'))return;
+  const {error}=await sb.rpc('a2c_delete_expense_split_v54',{p_split_id:splitId});
+  if(error)return toast(error.message,true);
+  closeModal();await refresh();toast('Reparto eliminado.');
+  if(onDone)onDone();else if(transactionId){const tx=state.transactions.find(row=>row.id===transactionId);if(tx)openTransaction(tx);}
+}
+
 function renderMessagesPage(){
   const unread=a2c42.conversations.reduce((sum,row)=>sum+Number(row.unread_count||0),0);
   return `<section class="messages-page">
@@ -83,23 +120,21 @@ function openA2C53Pay(splitId,onDone=null){
 }
 
 function openA2C53Manage(split,conversationId,friendId){
-  modal(`<form id="a2c53-manage-form">
+  modal(`<div>
     <div class="modal-head"><div><h2>Gestionar reparto</h2><p class="muted">${esc(split.concept)}</p></div><button type="button" class="close-btn" data-close>×</button></div>
-    <div class="field"><label>Importe pendiente</label><input name="amount" inputmode="decimal" value="${(Number(split.split_amount_cents)/100).toFixed(2).replace('.',',')}" required></div>
-    <div class="actions"><button type="button" class="btn" id="a2c53-mark-paid">Registrar pago manual</button><button class="btn primary">Guardar</button></div>
-  </form>`);
-  document.querySelector('#a2c53-manage-form').onsubmit=async event=>{
-    event.preventDefault();const button=event.submitter,amount=cents(new FormData(event.currentTarget).get('amount'));busy(button,true);
-    const {error}=await sb.rpc('a2c_update_expense_split_v53',{p_split_id:split.split_id,p_amount_cents:amount});
-    busy(button,false);if(error)return toast(error.message,true);
-    closeModal();await refresh();openA2C42Conversation(conversationId,friendId);
-  };
-  document.querySelector('#a2c53-mark-paid').onclick=async()=>{
-    if(!confirm(`¿Confirmas que ya te ha pagado ${money(split.split_amount_cents)}?`))return;
-    const {error}=await sb.rpc('a2c_mark_expense_split_paid_v53',{p_split_id:split.split_id,p_payment_method:'cash'});
-    if(error)return toast(error.message,true);
-    closeModal();await refresh();toast('Pago manual registrado.');openA2C42Conversation(conversationId,friendId);
-  };
+    <div class="a2c54-manage-summary"><span>Importe pendiente</span><strong>${money(split.split_amount_cents)}</strong></div>
+    <div class="actions vertical">
+      <button type="button" class="btn" id="a2c54-chat-edit">Editar importe</button>
+      <button type="button" class="btn primary" id="a2c54-chat-settle">Liquidar manualmente</button>
+      <button type="button" class="btn danger" id="a2c54-chat-delete">Eliminar reparto</button>
+    </div>
+    <div class="notice">La liquidación manual aumenta tu balance, pero no descuenta dinero del saldo del amigo.</div>
+    <style>.a2c54-manage-summary{display:flex;justify-content:space-between;align-items:center;padding:13px;border:1px solid #ebe7f1;border-radius:14px;margin-bottom:12px}.a2c54-manage-summary span{color:var(--muted)}.actions.vertical{display:grid}.actions.vertical .btn{width:100%}</style>
+  </div>`);
+  const reopen=()=>openA2C42Conversation(conversationId,friendId);
+  document.querySelector('#a2c54-chat-edit').onclick=()=>openA2C54EditSplit(split.split_id,null,reopen);
+  document.querySelector('#a2c54-chat-settle').onclick=()=>a2c54SettleSplit(split.split_id,null,reopen);
+  document.querySelector('#a2c54-chat-delete').onclick=()=>a2c54DeleteSplit(split.split_id,null,reopen);
 }
 
 openA2C42Conversation=async function(conversationId,friendId){
@@ -123,10 +158,10 @@ openA2C42Conversation=async function(conversationId,friendId){
     <div class="wa-chat-body" id="a2c42-message-list">
       ${messages.map(m=>`<article class="wa-bubble ${m.mine?'mine':'theirs'}"><p>${esc(m.body)}</p><small>${new Date(m.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</small></article>`).join('')}
       ${splits.map(s=>`<article class="wa-expense-card">
-        <div><small>GASTO COMPARTIDO</small><strong>${esc(s.concept)}</strong><span>Total ${money(s.transaction_amount_cents)} · Tu parte ${money(s.split_amount_cents)}</span></div>
+        <div><small>GASTO COMPARTIDO</small><strong>${esc(s.concept)}</strong><span>Total ${money(s.transaction_amount_cents)} · Parte asignada ${money(s.split_amount_cents)}</span></div>
         <div class="wa-expense-actions"><b class="${s.split_status==='paid'?'paid':'pending'}">${s.split_status==='paid'?'Pagado':'Pendiente'}</b>
         ${s.mine_to_pay?`<button class="btn primary" data-wa-pay="${s.split_id}">Pagar</button>`:''}
-        ${s.mine_to_manage?`<button class="btn" data-wa-manage="${s.split_id}">Editar</button>`:''}</div>
+        ${s.mine_to_manage?`<button class="btn" data-wa-manage="${s.split_id}">Gestionar</button>`:''}</div>
       </article>`).join('')}
     </div>
     <form class="wa-compose" id="a2c42-compose">

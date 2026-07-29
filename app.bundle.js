@@ -1,4 +1,4 @@
-/* A2C Finanzas 5.3 */
+/* A2C Finanzas 5.4 */
 
 let deferredInstallPrompt=null;
 if("serviceWorker" in navigator){
@@ -627,8 +627,30 @@ function mainBalance(){
     })
     .reduce((s,t)=>s+(t.kind==='income'?Number(t.amount_cents):-Number(t.amount_cents)),0);
 }
+
+const A2C_SHARED_TX_STYLE=`<style>
+.tx-split-badge.pending{background:#fff3df;color:#a46000}
+.tx-split-badge.paid{background:#e8f7ef;color:#14724e}
+.a2c54-main-split-list{display:grid;gap:7px;margin-top:11px}
+.a2c54-main-split-row{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid #ebe7f1;border-radius:13px;background:#fff}
+.a2c54-main-split-row>span{flex:1;min-width:0}
+.a2c54-main-split-row strong,.a2c54-main-split-row small{display:block}
+.a2c54-main-split-row small{font-size:10px;color:var(--muted);margin-top:2px}
+.a2c54-main-split-row b.pending{color:#c27711}.a2c54-main-split-row b.paid{color:#16835c}
+.a2c54-main-split-actions{display:flex;gap:5px}.a2c54-main-split-actions .btn{padding:6px 8px;font-size:10px}
+</style>`;
+
 function txRow(tx){
-  const splitCount=state.expenseSplits.filter(row=>row.transaction_id===tx.id&&row.owner_id===state.user.id).length;
+  const txSplits=state.expenseSplits.filter(row=>row.transaction_id===tx.id&&row.owner_id===state.user.id);
+  const splitCount=txSplits.length;
+  const pendingSplits=txSplits.filter(row=>row.status==='pending');
+  const paidSplits=txSplits.filter(row=>row.status==='paid');
+  const pendingSplitAmount=pendingSplits.reduce((sum,row)=>sum+Number(row.amount_cents||0),0);
+  const sharedStatus=splitCount
+    ? pendingSplits.length
+      ? `<span class="tx-split-badge pending">Compartido · deben ${money(pendingSplitAmount)}</span>`
+      : `<span class="tx-split-badge paid">Compartido · liquidado</span>`
+    : '';
   const space=tx.resource?.name?esc(tx.resource.name):'Cuenta principal';
   const payment=tx.payment_method==='cash'?'Efectivo':tx.payment_method==='crypto'?'Cripto':'Banco';
   const symbol=tx.kind==='income'?'↗':tx.kind==='expense'?'↘':tx.kind==='investment'?'◆':'◎';
@@ -638,7 +660,7 @@ function txRow(tx){
   return `<article class="transaction-row clickable" data-edit-tx="${tx.id}" tabindex="0">
     <div class="transaction-icon ${tx.kind}">${symbol}</div>
     <div class="transaction-copy"><strong>${esc(tx.concept)}</strong><small>${esc(tx.occurred_on)} · ${space} · ${payment}${tx.is_transfer?' · Traspaso':''}${fuel}${investment}${crypto}</small></div>
-    <div class="transaction-tail"><b class="${tx.kind}">${tx.kind==='income'?'+':'−'}${money(tx.amount_cents)}</b><div class="transaction-mini-actions">${splitCount?`<span class="tx-split-badge">${splitCount} personas</span>`:''}${tx.receipt_path?`<button type="button" class="receipt-thumb-btn" data-receipt-path="${esc(tx.receipt_path)}" aria-label="Ver imagen adjunta" title="Ver imagen">🖼️</button>`:''}</div></div>
+    <div class="transaction-tail"><b class="${tx.kind}">${tx.kind==='income'?'+':'−'}${money(tx.amount_cents)}</b><div class="transaction-mini-actions">${sharedStatus}${tx.receipt_path?`<button type="button" class="receipt-thumb-btn" data-receipt-path="${esc(tx.receipt_path)}" aria-label="Ver imagen adjunta" title="Ver imagen">🖼️</button>`:''}</div></div>
   </article>`;
 }
 
@@ -1137,7 +1159,28 @@ function openTransaction(tx={}){
   document.querySelector('#add-split-person')?.addEventListener('click',()=>addSplitRow());
   document.querySelectorAll('[data-split-mode]').forEach(b=>b.onclick=()=>{splitMode=b.dataset.splitMode;document.querySelectorAll('[data-split-mode]').forEach(x=>x.classList.toggle('active',x===b));recalcSplits()});
   amount.addEventListener('input',recalcSplits);
-  if(existingSplits.length){splitToggle.checked=true;splitControls.classList.remove('hidden');existingSplits.forEach(addSplitRow);}
+  if(existingSplits.length){
+    splitToggle.checked=true;
+    splitControls.classList.remove('hidden');
+    existingSplits.filter(row=>row.status!=='paid').forEach(addSplitRow);
+    splitBox?.insertAdjacentHTML('beforeend',`${A2C_SHARED_TX_STYLE}<div class="a2c54-main-split-list">
+      ${existingSplits.map(row=>{
+        const person=row.debtor?.display_name||row.person_name||'Persona';
+        return `<article class="a2c54-main-split-row">
+          <span><strong>${esc(person)}</strong><small>${row.status==='paid'?(row.paid_manually?'Liquidado manualmente':'Pagado por el amigo'):'Pendiente de pago'}</small></span>
+          <b class="${row.status==='paid'?'paid':'pending'}">${money(row.amount_cents)}</b>
+          ${row.status==='pending'?`<div class="a2c54-main-split-actions">
+            <button type="button" class="btn" data-a2c54-main-edit="${row.id}">Editar</button>
+            <button type="button" class="btn primary" data-a2c54-main-paid="${row.id}">Liquidar</button>
+            <button type="button" class="btn danger" data-a2c54-main-delete="${row.id}">Eliminar</button>
+          </div>`:''}
+        </article>`;
+      }).join('')}
+    </div>`);
+    document.querySelectorAll('[data-a2c54-main-edit]').forEach(button=>button.onclick=()=>openA2C54EditSplit(button.dataset.a2c54MainEdit,tx.id));
+    document.querySelectorAll('[data-a2c54-main-paid]').forEach(button=>button.onclick=()=>a2c54SettleSplit(button.dataset.a2c54MainPaid,tx.id));
+    document.querySelectorAll('[data-a2c54-main-delete]').forEach(button=>button.onclick=()=>a2c54DeleteSplit(button.dataset.a2c54MainDelete,tx.id));
+  }
   const syncInvestment=()=>{const box=document.querySelector('#investment-calculated');if(!box)return;const crypto=isCryptoConcept(form.elements.investment_company?.value||concept.value);document.querySelector('#stock-investment-fields')?.classList.toggle('hidden',crypto);document.querySelector('#crypto-investment-fields')?.classList.toggle('hidden',!crypto);if(crypto){const symbol=cryptoSymbolFromConcept(form.elements.investment_company?.value||concept.value);if(symbol&&!form.elements.crypto_symbol.value)form.elements.crypto_symbol.value=symbol;const quantity=cryptoQty(form.elements.crypto_quantity?.value),unit=decimal(form.elements.crypto_unit_price?.value),fee=decimal(form.elements.crypto_fee?.value),mode=form.elements.crypto_fee_mode?.value||'add';if(quantity>0&&unit>0){const base=quantity*unit,total=mode==='add'?base+Math.max(0,fee):base;const received=mode==='subtract'&&fee>0?Math.max(0,(base-fee)/unit):quantity;amount.value=total.toFixed(2);box.textContent=`Total: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(total)} · Recibirás ${received.toLocaleString('es-ES',{maximumFractionDigits:8})} ${form.elements.crypto_symbol.value||symbol}.`;}else box.textContent='Introduce precio y cantidad para calcular la compra.';return;}const quantity=positive(form.elements.investment_quantity?.value),unitPrice=positive(form.elements.investment_unit_price?.value);if(quantity&&unitPrice){const total=quantity*unitPrice;amount.value=total.toFixed(2);box.textContent=`Total calculado: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(total)} (${quantity.toLocaleString('es-ES',{maximumFractionDigits:6})} acciones × ${unitPrice.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:4})} €).`;}else box.textContent='Introduce el número de acciones y el precio para calcular el total.';};
   const syncCryptoPayment=()=>{const box=document.querySelector('#crypto-payment-calculated');if(!box)return;const holding=String(resource.value).startsWith('crypto:')?state.cryptoHoldings.find(h=>h.id===String(resource.value).slice(7)):null;const qty=cryptoQty(form.elements.crypto_spend_quantity?.value),unit=positive(form.elements.crypto_spend_unit_price?.value);if(holding&&qty>0&&unit>0){amount.value=(qty*unit).toFixed(2);box.textContent=`Pagarás ${qty.toLocaleString('es-ES',{maximumFractionDigits:8})} ${holding.symbol} · Valor: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(qty*unit)}.`;}else box.textContent='Selecciona una criptomoneda e indica cantidad y valor.';};
   const update=()=>{const saving=kind.value==='saving',investment=kind.value==='investment',cryptoPayment=kind.value==='expense'&&String(resource.value).startsWith('crypto:'),fuel=kind.value==='expense'&&!cryptoPayment&&isFuelConcept(concept.value);document.querySelector('#saving-goal-field').classList.toggle('hidden',!saving);splitBox?.classList.toggle('hidden',kind.value!=='expense');document.querySelector('#investment-detail').classList.toggle('hidden',!investment);document.querySelector('#fuel-detail').classList.toggle('hidden',!fuel);document.querySelector('#crypto-payment-detail')?.classList.toggle('hidden',!cryptoPayment);form.elements.payment_method.disabled=cryptoPayment;if(cryptoPayment)form.elements.payment_method.value='bank';if(investment&&form.elements.investment_company&&!form.elements.investment_company.value)form.elements.investment_company.value=concept.value;const selected=state.resources.find(r=>r.id===resource.value),selectedHolding=String(resource.value).startsWith('crypto:')?state.cryptoHoldings.find(h=>h.id===String(resource.value).slice(7)):null;document.querySelector('#piggy-transfer-note').textContent=selected?.type==='piggy'&&(kind.value==='income'||saving)?'Esta aportación se restará automáticamente de la cuenta principal.':selected?.type==='folder'?'Este movimiento afectará al saldo de la cuenta principal.':selectedHolding?`Disponible: ${Number(selectedHolding.quantity).toLocaleString('es-ES',{maximumFractionDigits:8})} ${selectedHolding.symbol}.`:'';syncFuel();syncInvestment();syncCryptoPayment();};
@@ -2190,6 +2233,43 @@ openNotificationDestination=async function(notification){
    A2C Finanzas 5.3
    Mensajes y gastos divididos
    ========================== */
+
+function a2c54FindSplit(splitId){
+  return state.expenseSplits.find(row=>String(row.id)===String(splitId));
+}
+function openA2C54EditSplit(splitId,transactionId=null,onDone=null){
+  const split=a2c54FindSplit(splitId);
+  if(!split)return toast('El reparto ya no está disponible.',true);
+  modal(`<form id="a2c54-edit-split-form">
+    <div class="modal-head"><div><h2>Editar parte compartida</h2><p class="muted">${esc(split.transaction?.concept||'Gasto compartido')}</p></div><button type="button" class="close-btn" data-close>×</button></div>
+    <div class="field"><label>Importe pendiente</label><input name="amount" inputmode="decimal" value="${(Number(split.amount_cents)/100).toFixed(2).replace('.',',')}" required></div>
+    <div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div>
+  </form>`);
+  document.querySelector('#a2c54-edit-split-form').onsubmit=async event=>{
+    event.preventDefault();const button=event.submitter,amount=cents(new FormData(event.currentTarget).get('amount'));
+    busy(button,true);const {error}=await sb.rpc('a2c_update_expense_split_v53',{p_split_id:splitId,p_amount_cents:amount});busy(button,false);
+    if(error)return toast(error.message,true);
+    closeModal();await refresh();toast('Importe actualizado.');
+    if(onDone)onDone();else if(transactionId){const tx=state.transactions.find(row=>row.id===transactionId);if(tx)openTransaction(tx);}
+  };
+}
+async function a2c54SettleSplit(splitId,transactionId=null,onDone=null){
+  const split=a2c54FindSplit(splitId);
+  if(!split)return toast('El reparto ya no está disponible.',true);
+  if(!confirm(`¿Confirmas que quieres liquidar manualmente ${money(split.amount_cents)}? Se aumentará tu balance, pero no se descontará del saldo del amigo.`))return;
+  const {error}=await sb.rpc('a2c_mark_expense_split_paid_v53',{p_split_id:splitId,p_payment_method:'cash'});
+  if(error)return toast(error.message,true);
+  closeModal();await refresh();toast('Reparto liquidado manualmente.');
+  if(onDone)onDone();else if(transactionId){const tx=state.transactions.find(row=>row.id===transactionId);if(tx)openTransaction(tx);}
+}
+async function a2c54DeleteSplit(splitId,transactionId=null,onDone=null){
+  if(!confirm('¿Eliminar este reparto compartido? El amigo dejará de tenerlo pendiente.'))return;
+  const {error}=await sb.rpc('a2c_delete_expense_split_v54',{p_split_id:splitId});
+  if(error)return toast(error.message,true);
+  closeModal();await refresh();toast('Reparto eliminado.');
+  if(onDone)onDone();else if(transactionId){const tx=state.transactions.find(row=>row.id===transactionId);if(tx)openTransaction(tx);}
+}
+
 function renderMessagesPage(){
   const unread=a2c42.conversations.reduce((sum,row)=>sum+Number(row.unread_count||0),0);
   return `<section class="messages-page">
@@ -2270,23 +2350,21 @@ function openA2C53Pay(splitId,onDone=null){
 }
 
 function openA2C53Manage(split,conversationId,friendId){
-  modal(`<form id="a2c53-manage-form">
+  modal(`<div>
     <div class="modal-head"><div><h2>Gestionar reparto</h2><p class="muted">${esc(split.concept)}</p></div><button type="button" class="close-btn" data-close>×</button></div>
-    <div class="field"><label>Importe pendiente</label><input name="amount" inputmode="decimal" value="${(Number(split.split_amount_cents)/100).toFixed(2).replace('.',',')}" required></div>
-    <div class="actions"><button type="button" class="btn" id="a2c53-mark-paid">Registrar pago manual</button><button class="btn primary">Guardar</button></div>
-  </form>`);
-  document.querySelector('#a2c53-manage-form').onsubmit=async event=>{
-    event.preventDefault();const button=event.submitter,amount=cents(new FormData(event.currentTarget).get('amount'));busy(button,true);
-    const {error}=await sb.rpc('a2c_update_expense_split_v53',{p_split_id:split.split_id,p_amount_cents:amount});
-    busy(button,false);if(error)return toast(error.message,true);
-    closeModal();await refresh();openA2C42Conversation(conversationId,friendId);
-  };
-  document.querySelector('#a2c53-mark-paid').onclick=async()=>{
-    if(!confirm(`¿Confirmas que ya te ha pagado ${money(split.split_amount_cents)}?`))return;
-    const {error}=await sb.rpc('a2c_mark_expense_split_paid_v53',{p_split_id:split.split_id,p_payment_method:'cash'});
-    if(error)return toast(error.message,true);
-    closeModal();await refresh();toast('Pago manual registrado.');openA2C42Conversation(conversationId,friendId);
-  };
+    <div class="a2c54-manage-summary"><span>Importe pendiente</span><strong>${money(split.split_amount_cents)}</strong></div>
+    <div class="actions vertical">
+      <button type="button" class="btn" id="a2c54-chat-edit">Editar importe</button>
+      <button type="button" class="btn primary" id="a2c54-chat-settle">Liquidar manualmente</button>
+      <button type="button" class="btn danger" id="a2c54-chat-delete">Eliminar reparto</button>
+    </div>
+    <div class="notice">La liquidación manual aumenta tu balance, pero no descuenta dinero del saldo del amigo.</div>
+    <style>.a2c54-manage-summary{display:flex;justify-content:space-between;align-items:center;padding:13px;border:1px solid #ebe7f1;border-radius:14px;margin-bottom:12px}.a2c54-manage-summary span{color:var(--muted)}.actions.vertical{display:grid}.actions.vertical .btn{width:100%}</style>
+  </div>`);
+  const reopen=()=>openA2C42Conversation(conversationId,friendId);
+  document.querySelector('#a2c54-chat-edit').onclick=()=>openA2C54EditSplit(split.split_id,null,reopen);
+  document.querySelector('#a2c54-chat-settle').onclick=()=>a2c54SettleSplit(split.split_id,null,reopen);
+  document.querySelector('#a2c54-chat-delete').onclick=()=>a2c54DeleteSplit(split.split_id,null,reopen);
 }
 
 openA2C42Conversation=async function(conversationId,friendId){
@@ -2310,10 +2388,10 @@ openA2C42Conversation=async function(conversationId,friendId){
     <div class="wa-chat-body" id="a2c42-message-list">
       ${messages.map(m=>`<article class="wa-bubble ${m.mine?'mine':'theirs'}"><p>${esc(m.body)}</p><small>${new Date(m.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</small></article>`).join('')}
       ${splits.map(s=>`<article class="wa-expense-card">
-        <div><small>GASTO COMPARTIDO</small><strong>${esc(s.concept)}</strong><span>Total ${money(s.transaction_amount_cents)} · Tu parte ${money(s.split_amount_cents)}</span></div>
+        <div><small>GASTO COMPARTIDO</small><strong>${esc(s.concept)}</strong><span>Total ${money(s.transaction_amount_cents)} · Parte asignada ${money(s.split_amount_cents)}</span></div>
         <div class="wa-expense-actions"><b class="${s.split_status==='paid'?'paid':'pending'}">${s.split_status==='paid'?'Pagado':'Pendiente'}</b>
         ${s.mine_to_pay?`<button class="btn primary" data-wa-pay="${s.split_id}">Pagar</button>`:''}
-        ${s.mine_to_manage?`<button class="btn" data-wa-manage="${s.split_id}">Editar</button>`:''}</div>
+        ${s.mine_to_manage?`<button class="btn" data-wa-manage="${s.split_id}">Gestionar</button>`:''}</div>
       </article>`).join('')}
     </div>
     <form class="wa-compose" id="a2c42-compose">
