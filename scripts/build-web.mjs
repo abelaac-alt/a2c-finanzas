@@ -4,7 +4,8 @@ const files = [
   'src/00-core.js',
   'src/10-control-financiero.js',
   'src/20-perfil-actividad.js',
-  'src/30-amigos-mensajes.js'
+  'src/30-amigos-mensajes.js',
+  'src/40-transacciones-compartidas.js'
 ];
 
 const banner = `/*

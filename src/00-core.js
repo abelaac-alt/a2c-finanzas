@@ -358,7 +358,7 @@ async function loadAll(){
     sb.from('crypto_ledger').select('*,source:resources!crypto_ledger_source_resource_id_fkey(id,name,type),destination:resources!crypto_ledger_destination_resource_id_fkey(id,name,type)').order('occurred_on',{ascending:false}).order('created_at',{ascending:false}),
     sb.from('friendships').select('*').or(`requester_id.eq.${state.user.id},addressee_id.eq.${state.user.id}`).order('created_at',{ascending:false}),
     sb.from('profiles').select('id,email,display_name,avatar_path,username,is_public').order('username').limit(500),
-    sb.from('expense_splits').select('*').or(`owner_id.eq.${state.user.id},debtor_user_id.eq.${state.user.id}`).order('created_at',{ascending:false}),
+    sb.from('expense_splits').select('*,transaction:finance_transactions(id,concept,amount_cents,occurred_on,kind,resource_id),owner:profiles!expense_splits_owner_id_fkey(id,display_name,username),debtor:profiles!expense_splits_debtor_user_id_fkey(id,display_name,username)').or(`owner_id.eq.${state.user.id},debtor_user_id.eq.${state.user.id}`).order('created_at',{ascending:false}),
     sb.from('stock_sales').select('*').order('occurred_on',{ascending:false})
   ];
   if(isAdmin())q.push(sb.from('profiles').select('*').order('email'));
@@ -697,7 +697,8 @@ function financeDonut(values,balance){
     {key:'income',label:'Ingresos',value:Number(values.income)||0,color:'var(--green)'},
     {key:'expense',label:'Gastos',value:Number(values.expense)||0,color:'var(--red)'},
     {key:'saving',label:'Ahorro',value:Number(values.saving)||0,color:'var(--amber)'},
-    {key:'investment',label:'Inversión',value:Number(values.investment)||0,color:'var(--blue)'}
+    {key:'investment',label:'Inversión',value:Number(values.investment)||0,color:'var(--blue)'},
+    {key:'debt',label:'Debes',value:Number(values.debt)||0,color:'#D9851F'}
   ];
   const total=items.reduce((sum,item)=>sum+item.value,0);
   const cx=80,cy=80,radius=66;
@@ -732,6 +733,7 @@ function financeDonut(values,balance){
 
 function renderHome(){
   const month=totals(monthTransactions());
+  month.debt=state.expenseSplits.filter(row=>row.debtor_user_id===state.user.id&&row.status==='pending').reduce((sum,row)=>sum+Number(row.amount_cents||0),0);
   const recent=state.transactions.filter(t=>!(t.is_transfer&&t.transfer_role==='destination')).slice(0,10);
   return `<section class="dashboard home-overview">
     <div class="dashboard-head"><div><span class="eyebrow">Resumen financiero</span><h1>Hola, ${esc(state.profile.display_name||'')}</h1><p class="muted">Tu situación financiera actual.</p></div></div>
