@@ -26,7 +26,7 @@
   vendor.async = false;
   vendor.onload = () => {
     const runtime = document.createElement('script');
-    runtime.src = './app.bundle.js?v=54';
+    runtime.src = './app.bundle.js?v=55';
     runtime.async = false;
     runtime.onerror = () => showFailure('No se pudo cargar el núcleo de la aplicación.');
     document.body.appendChild(runtime);
