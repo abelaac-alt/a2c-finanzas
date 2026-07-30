@@ -1,0 +1,107 @@
+(function(){
+  'use strict';
+  const A=window.A2C;
+  const T=A.transactions={
+    rowMarkup(row){
+      const meta=A.kindMeta[row.kind]||A.kindMeta.expense;
+      const shares=A.store.activeSharesForTransaction(row.id);
+      const pending=shares.filter(share=>share.status==='pending').reduce((sum,share)=>sum+Number(share.amount_cents||0),0);
+      const badge=shares.length?(pending?`<span class="badge warning">Compartido · ${A.money(pending)} pendiente</span>`:`<span class="badge success">Compartido · liquidado</span>`):'';
+      return `<div class="list-row clickable" data-transaction="${row.id}"><span class="kind-icon ${meta.class}">${meta.icon}</span><div class="list-row-main"><strong>${A.escape(row.concept||row.merchant||meta.label)}</strong><small>${A.escape(row.occurred_on||'')} · ${A.escape(A.store.resourceById(row.resource_id)?.name||'Cuenta principal')}</small>${badge}</div><div class="list-row-value"><b class="${meta.class==='income'?'success-text':meta.class==='expense'?'danger-text':''}">${row.kind==='income'?'+':'−'}${A.money(row.amount_cents)}</b><small>${meta.label}</small></div></div>`;
+    },
+    render(){
+      const query=A.state.filters.query.toLowerCase();const kind=A.state.filters.kind;
+      const rows=A.state.transactions.filter(row=>(!kind||row.kind===kind)&&(!query||String(row.concept||row.merchant||'').toLowerCase().includes(query)));
+      return `${A.ui.header('Actividad','Movimientos','Busca, revisa y edita tus transacciones','<button class="btn primary" id="new-transaction">＋ Nuevo</button>')}
+        <section class="card compact"><div class="field-row"><div class="field" style="margin:0"><label>Buscar</label><input id="transaction-search" value="${A.escape(A.state.filters.query)}" placeholder="Concepto o comercio"></div><div class="field" style="margin:0"><label>Tipo</label><select id="transaction-kind"><option value="">Todos</option>${Object.entries(A.kindMeta).map(([key,item])=>`<option value="${key}" ${kind===key?'selected':''}>${item.label}</option>`).join('')}</select></div></div></section>
+        <section class="card" style="margin-top:12px">${rows.length?`<div class="list">${rows.map(T.rowMarkup).join('')}</div>`:A.ui.empty('No hay movimientos con estos filtros.')}</section>`;
+    },
+    bind(){
+      if(A.state.page!=='activity'&&A.state.page!=='home')return;
+      A.root.querySelector('#new-transaction')?.addEventListener('click',()=>T.openForm());
+      A.root.querySelector('#transaction-search')?.addEventListener('input',event=>{A.state.filters.query=event.target.value;clearTimeout(T._filterTimer);T._filterTimer=setTimeout(()=>A.ui.render(),180);});
+      A.root.querySelector('#transaction-kind')?.addEventListener('change',event=>{A.state.filters.kind=event.target.value;A.ui.render();});
+      A.root.querySelectorAll('[data-transaction]').forEach(row=>row.addEventListener('click',()=>T.openDetail(row.dataset.transaction)));
+    },
+    openFuelForm(){T.openForm(null,{fuel:true,kind:'expense',concept:'Combustible'});},
+    openForm(transaction=null,preset={}){
+      const editing=Boolean(transaction?.id);const tx=transaction||{};const activeShares=editing?A.store.activeSharesForTransaction(tx.id):[];
+      const selectedKind=preset.kind||tx.kind||'expense';const isFuel=Boolean(preset.fuel||tx.fuel_liters);
+      A.modal(`<form id="transaction-form"><div class="modal-head"><div><h2>${editing?'Editar movimiento':'Nuevo movimiento'}</h2><p>${editing?'Actualiza los datos sin perder el historial asociado.':'Registra un gasto, ingreso, ahorro o inversión.'}</p></div><button type="button" class="modal-close" data-close>×</button></div>
+        <div class="field"><label>Tipo</label><select name="kind">${Object.entries(A.kindMeta).map(([key,item])=>`<option value="${key}" ${selectedKind===key?'selected':''}>${item.label}</option>`).join('')}</select></div>
+        <div class="field"><label>Concepto</label><input name="concept" maxlength="140" required value="${A.escape(preset.concept||tx.concept||tx.merchant||'')}" placeholder="Ej. Mercadona, nómina, gasolina…"></div>
+        <div class="field-row"><div class="field"><label>Importe (€)</label><input name="amount" inputmode="decimal" required value="${tx.amount_cents?(Number(tx.amount_cents)/100).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):''}"></div><div class="field"><label>Fecha</label><input name="date" type="date" required value="${A.escape(tx.occurred_on||A.today())}"></div></div>
+        <div class="field-row"><div class="field"><label>Cuenta</label><select name="resource"><option value="">Cuenta principal</option>${A.state.resources.map(resource=>`<option value="${resource.id}" ${String(preset.resourceId||tx.resource_id||'')===String(resource.id)?'selected':''}>${A.escape(resource.name)}</option>`).join('')}</select></div><div class="field"><label>Método</label><select name="payment_method"><option value="bank">Banco / tarjeta</option><option value="cash" ${tx.payment_method==='cash'?'selected':''}>Efectivo</option><option value="crypto" ${tx.payment_method==='crypto'?'selected':''}>Cripto</option></select></div></div>
+        <label class="check-row" id="fuel-toggle-row"><input type="checkbox" name="fuel_enabled" ${isFuel?'checked':''}><span><b>Es un repostaje</b><small>Guarda precio por litro, litros y consumo.</small></span></label>
+        <section id="fuel-fields" class="card compact ${isFuel?'':'hidden'}" style="margin-top:10px"><div class="field-row"><div class="field"><label>Precio por litro (€)</label><input name="fuel_price" inputmode="decimal" value="${tx.fuel_price_per_liter_milli?Number(tx.fuel_price_per_liter_milli)/1000:''}"></div><div class="field"><label>Litros</label><input name="fuel_liters" inputmode="decimal" value="${tx.fuel_liters||''}"></div></div><div class="field"><label>Kilómetros desde el último repostaje</label><input name="fuel_km" inputmode="decimal" value="${tx.fuel_km||''}" placeholder="Opcional"></div><div class="notice" id="fuel-preview">Completa precio y litros para calcular el total.</div></section>
+        ${activeShares.length?`<section class="shared-panel" style="margin-top:12px"><div class="card-title"><div><h3>Gasto compartido</h3><p>El reparto se gestiona desde el detalle del movimiento.</p></div><span class="badge warning">${activeShares.length} participante${activeShares.length===1?'':'s'}</span></div></section>`:`<label class="check-row ${selectedKind==='expense'?'':'hidden'}" id="share-toggle-row" style="margin-top:10px"><input type="checkbox" name="share_enabled"><span><b>Dividir este gasto</b><small>Asigna importes a amigos o personas externas.</small></span></label><section id="share-fields" class="shared-panel hidden" style="margin-top:10px"><div class="card-title"><div><h3>Participantes</h3><p>La parte del creador no se añade: es la diferencia restante.</p></div><button type="button" class="btn small" id="add-participant">＋ Añadir</button></div><div id="participant-list"></div><div class="notice" id="share-summary">Añade al menos una persona.</div></section>`}
+        <div class="field" style="margin-top:12px"><label>Notas</label><textarea name="notes" maxlength="800">${A.escape(tx.notes||'')}</textarea></div>
+        <div class="field"><label>Justificante</label><input name="receipt" type="file" accept="image/*,application/pdf"><small class="muted">Opcional. Imágenes o PDF.</small></div>
+        <div class="actions">${editing?'<button type="button" class="btn danger" id="delete-transaction">Eliminar</button>':''}<button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">${editing?'Guardar cambios':'Registrar movimiento'}</button></div></form>`,true);
+      const form=A.modalRoot.querySelector('#transaction-form');
+      const kind=form.elements.kind;const amount=form.elements.amount;const fuelToggle=form.elements.fuel_enabled;
+      const fuelFields=A.modalRoot.querySelector('#fuel-fields');const fuelPreview=A.modalRoot.querySelector('#fuel-preview');
+      const shareToggle=form.elements.share_enabled;const shareFields=A.modalRoot.querySelector('#share-fields');const participantList=A.modalRoot.querySelector('#participant-list');
+      const syncKind=()=>{const expense=kind.value==='expense';A.modalRoot.querySelector('#fuel-toggle-row').classList.toggle('hidden',!expense);A.modalRoot.querySelector('#share-toggle-row')?.classList.toggle('hidden',!expense);if(!expense){fuelToggle.checked=false;fuelFields.classList.add('hidden');if(shareToggle){shareToggle.checked=false;shareFields.classList.add('hidden');}}};
+      const syncFuel=()=>{fuelFields.classList.toggle('hidden',!fuelToggle.checked);T.updateFuelCalculation(form,fuelPreview);};
+      kind.addEventListener('change',syncKind);fuelToggle.addEventListener('change',syncFuel);
+      ['fuel_price','fuel_liters','fuel_km'].forEach(name=>form.elements[name]?.addEventListener('input',()=>T.updateFuelCalculation(form,fuelPreview)));
+      shareToggle?.addEventListener('change',()=>{shareFields.classList.toggle('hidden',!shareToggle.checked);if(shareToggle.checked&&!participantList.children.length)T.addParticipantRow(participantList,form);T.updateShareSummary(form);});
+      A.modalRoot.querySelector('#add-participant')?.addEventListener('click',()=>T.addParticipantRow(participantList,form));
+      form.addEventListener('submit',event=>T.save(event,tx,activeShares));
+      A.modalRoot.querySelector('#delete-transaction')?.addEventListener('click',()=>T.delete(tx));
+      syncKind();syncFuel();
+    },
+    updateFuelCalculation(form,preview){
+      if(!form.elements.fuel_enabled.checked)return;
+      const price=Number(String(form.elements.fuel_price.value||'').replace(',','.'));
+      const liters=Number(String(form.elements.fuel_liters.value||'').replace(',','.'));
+      if(price>0&&liters>0){const total=price*liters;form.elements.amount.value=total.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});const km=Number(String(form.elements.fuel_km.value||'').replace(',','.'));preview.textContent=`${liters.toLocaleString('es-ES',{maximumFractionDigits:2})} L × ${price.toLocaleString('es-ES',{minimumFractionDigits:3,maximumFractionDigits:3})} €/L = ${total.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €${km>0?` · ${(liters/km*100).toLocaleString('es-ES',{maximumFractionDigits:2})} L/100 km`:''}`;}else preview.textContent='Completa precio y litros para calcular el total.';
+    },
+    addParticipantRow(container,form){
+      const id=A.unique('participant');container.insertAdjacentHTML('beforeend',`<div class="participant-row" id="${id}"><select class="participant-select"><option value="">Persona externa</option>${A.state.friends.map(friend=>`<option value="${friend.id}">${A.escape(friend.display_name||friend.username)} · @${A.escape(friend.username||'usuario')}</option>`).join('')}</select><input class="participant-name" placeholder="Nombre externo"><input class="participant-amount" inputmode="decimal" placeholder="0,00"><button type="button" class="remove-participant">×</button></div>`);
+      const row=container.querySelector(`#${CSS.escape(id)}`);const select=row.querySelector('.participant-select');const name=row.querySelector('.participant-name');
+      const sync=()=>{name.disabled=Boolean(select.value);if(select.value)name.value='';name.placeholder=select.value?'Amigo seleccionado':'Nombre externo';T.updateShareSummary(form);};
+      select.addEventListener('change',sync);name.addEventListener('input',()=>T.updateShareSummary(form));row.querySelector('.participant-amount').addEventListener('input',()=>T.updateShareSummary(form));row.querySelector('.remove-participant').addEventListener('click',()=>{row.remove();T.updateShareSummary(form);});sync();
+    },
+    participantPayload(form){return [...A.modalRoot.querySelectorAll('.participant-row')].map(row=>{const userId=row.querySelector('.participant-select').value;return {user_id:userId||null,name:userId?null:String(row.querySelector('.participant-name').value||'').trim()||null,amount_cents:A.toCents(row.querySelector('.participant-amount').value)};}).filter(row=>row.amount_cents>0);},
+    updateShareSummary(form){
+      const summary=A.modalRoot.querySelector('#share-summary');if(!summary)return;const rows=T.participantPayload(form);const total=rows.reduce((sum,row)=>sum+row.amount_cents,0);const expense=A.toCents(form.elements.amount.value);const remaining=expense-total;summary.textContent=rows.length?`Asignado: ${A.money(total)} · Tu parte: ${A.money(Math.max(0,remaining))}`:'Añade al menos una persona.';summary.classList.toggle('danger',remaining<0);
+    },
+    async save(event,tx,activeShares){
+      event.preventDefault();const form=event.currentTarget;const button=event.submitter;A.setBusy(button,true);
+      try{
+        const kind=form.elements.kind.value;const amountCents=A.toCents(form.elements.amount.value);const concept=String(form.elements.concept.value||'').trim();
+        if(!concept||amountCents<=0)throw new Error('Indica un concepto y un importe válidos.');
+        const fuelEnabled=kind==='expense'&&form.elements.fuel_enabled.checked;const fuelPrice=Number(String(form.elements.fuel_price.value||'').replace(',','.'));const fuelLiters=Number(String(form.elements.fuel_liters.value||'').replace(',','.'));const fuelKm=Number(String(form.elements.fuel_km.value||'').replace(',','.'));
+        if(fuelEnabled&&(!(fuelPrice>0)||!(fuelLiters>0)))throw new Error('Para un repostaje indica precio por litro y litros.');
+        const payload={creator_id:A.state.user.id,kind,resource_id:form.elements.resource.value||null,category_id:null,merchant:'',payment_method:form.elements.payment_method.value,amount_cents:amountCents,concept,occurred_on:form.elements.date.value,notes:String(form.elements.notes.value||''),budget_category:kind==='expense'?A.classify(concept):null,fuel_liters:fuelEnabled?fuelLiters:null,fuel_price_per_liter_milli:fuelEnabled?Math.round(fuelPrice*1000):null,fuel_km:fuelEnabled&&fuelKm>0?fuelKm:null,fuel_consumption_l100km:fuelEnabled&&fuelKm>0?Number((fuelLiters/fuelKm*100).toFixed(2)):null};
+        let id=tx.id;
+        if(id){const result=await A.sb.from('finance_transactions').update(payload).eq('id',id).eq('creator_id',A.state.user.id).select('id').single();if(result.error)throw result.error;}
+        else{const result=await A.sb.from('finance_transactions').insert(payload).select('id').single();if(result.error)throw result.error;id=result.data.id;}
+        const receipt=form.elements.receipt.files?.[0];if(receipt){const path=`${A.state.user.id}/${id}/${Date.now()}-${receipt.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const upload=await A.sb.storage.from('receipts').upload(path,receipt,{upsert:true});if(upload.error)throw upload.error;const update=await A.sb.from('finance_transactions').update({receipt_path:path}).eq('id',id);if(update.error)throw update.error;}
+        if(kind==='expense'&&form.elements.share_enabled?.checked&&!activeShares.length){const participants=T.participantPayload(form);if(!participants.length)throw new Error('Añade al menos un participante.');if(participants.some(row=>!row.user_id&&!row.name))throw new Error('Indica el nombre de las personas externas.');if(participants.reduce((sum,row)=>sum+row.amount_cents,0)>amountCents)throw new Error('Los importes compartidos superan el gasto.');await A.rpc('a2c_v7_create_shared_expenses',{p_transaction_id:id,p_participants:participants});}
+        await A.refresh(false);await A.messages.load(true);A.closeModal();A.ui.render();A.toast(tx.id?'Movimiento actualizado.':fuelEnabled?'Repostaje guardado.':'Movimiento registrado.');
+      }catch(error){A.toast(error.message,true);A.setBusy(button,false);}
+    },
+    async delete(tx){
+      const shares=A.store.activeSharesForTransaction(tx.id);if(shares.some(row=>['paid','settled'].includes(row.status))){A.toast('No se puede borrar un gasto con partes ya liquidadas.',true);return;}
+      A.ui.confirm({title:'Eliminar movimiento',message:'Se eliminará el movimiento y los repartos pendientes asociados.',confirmLabel:'Eliminar',danger:true,onConfirm:async()=>{const result=await A.sb.from('finance_transactions').delete().eq('id',tx.id).eq('creator_id',A.state.user.id);if(result.error)throw result.error;await A.refresh(false);A.ui.render();A.toast('Movimiento eliminado.');}});
+    },
+    openDetail(id){
+      const tx=A.store.transactionById(id);if(!tx)return;const meta=A.kindMeta[tx.kind]||A.kindMeta.expense;const shares=A.state.shares.filter(row=>String(row.transaction_id)===String(tx.id)).sort((a,b)=>a.created_at.localeCompare(b.created_at));
+      A.modal(`<div class="modal-head"><div><h2>${A.escape(tx.concept||meta.label)}</h2><p>${A.escape(tx.occurred_on||'')} · ${A.escape(A.store.resourceById(tx.resource_id)?.name||'Cuenta principal')}</p></div><button class="modal-close" data-close>×</button></div><section class="card compact"><div class="metrics"><div class="metric-card ${meta.class}"><small>IMPORTE</small><b>${A.money(tx.amount_cents)}</b></div><div class="metric-card"><small>TIPO</small><b>${meta.label}</b></div>${tx.fuel_liters?`<div class="metric-card"><small>LITROS</small><b>${Number(tx.fuel_liters).toLocaleString('es-ES',{maximumFractionDigits:2})} L</b></div><div class="metric-card"><small>PRECIO/L</small><b>${(Number(tx.fuel_price_per_liter_milli)/1000).toLocaleString('es-ES',{minimumFractionDigits:3,maximumFractionDigits:3})} €</b></div>`:''}</div>${tx.notes?`<p class="muted">${A.escape(tx.notes)}</p>`:''}</section>${shares.length?T.sharedPanel(shares):''}<div class="actions"><button class="btn danger" id="detail-delete">Eliminar</button><button class="btn" data-close>Cerrar</button><button class="btn primary" id="detail-edit">Editar</button></div>`,true);
+      A.modalRoot.querySelector('#detail-edit').addEventListener('click',()=>{A.closeModal();T.openForm(tx);});A.modalRoot.querySelector('#detail-delete').addEventListener('click',()=>T.delete(tx));
+      A.modalRoot.querySelectorAll('[data-share-edit]').forEach(button=>button.addEventListener('click',()=>T.editShare(button.dataset.shareEdit)));
+      A.modalRoot.querySelectorAll('[data-share-settle]').forEach(button=>button.addEventListener('click',()=>T.settleShare(button.dataset.shareSettle)));
+      A.modalRoot.querySelectorAll('[data-share-cancel]').forEach(button=>button.addEventListener('click',()=>T.cancelShare(button.dataset.shareCancel)));
+    },
+    sharedPanel(shares){
+      return `<section class="shared-panel" style="margin-top:12px"><div class="card-title"><div><h3>Gasto compartido</h3><p>Personas, versiones e importes</p></div></div>${shares.map(share=>{const person=share.participant?.display_name||share.participant?.username||share.participant_name||'Persona';const old=['superseded','cancelled'].includes(share.status);const status={pending:'Pendiente',paid:'Pagado',settled:'Liquidado manualmente',cancelled:'Cancelado',superseded:'Versión anterior'}[share.status]||share.status;return `<div class="shared-person" style="${old?'opacity:.55':''}"><div><strong>${A.escape(person)}</strong><small>Versión ${share.version} · ${status}</small></div><b>${A.money(share.amount_cents)}</b>${share.status==='pending'?`<div class="shared-actions"><button class="btn small" data-share-edit="${share.id}">Editar</button><button class="btn small success" data-share-settle="${share.id}">Liquidar</button><button class="btn small danger" data-share-cancel="${share.id}">Cancelar</button></div>`:''}</div>`;}).join('')}</section>`;
+    },
+    editShare(id){const share=A.store.currentShare(id);if(!share)return;A.modal(`<form id="share-edit-form"><div class="modal-head"><div><h2>Editar parte</h2><p>Se creará una nueva versión y la anterior quedará bloqueada.</p></div><button class="modal-close" data-close>×</button></div><div class="field"><label>Nuevo importe (€)</label><input name="amount" inputmode="decimal" required value="${(Number(share.amount_cents)/100).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}"></div><div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Actualizar</button></div></form>`);A.modalRoot.querySelector('#share-edit-form').addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;A.setBusy(button,true);try{const amount=A.toCents(event.currentTarget.elements.amount.value);await A.rpc('a2c_v7_update_shared_expense',{p_share_id:id,p_amount_cents:amount});await A.refresh(false);await A.messages.load(true);A.closeModal();A.ui.render();A.toast('Reparto actualizado.');}catch(error){A.toast(error.message,true);A.setBusy(button,false);}});},
+    settleShare(id){A.ui.confirm({title:'Liquidar manualmente',message:'Aumentará tu saldo, pero no descontará dinero al otro usuario.',confirmLabel:'Liquidar',onConfirm:async()=>{await A.rpc('a2c_v7_settle_shared_expense',{p_share_id:id});await A.refresh(false);await A.messages.load(true);A.ui.render();A.toast('Parte liquidada manualmente.');}});},
+    cancelShare(id){A.ui.confirm({title:'Cancelar reparto',message:'La deuda dejará de estar activa y no se modificará ningún saldo.',confirmLabel:'Cancelar reparto',danger:true,onConfirm:async()=>{await A.rpc('a2c_v7_cancel_shared_expense',{p_share_id:id});await A.refresh(false);await A.messages.load(true);A.ui.render();A.toast('Reparto cancelado.');}});}
+  };
+  A.ui.registerPage('activity',T.render);
+})();
