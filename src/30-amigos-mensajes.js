@@ -180,3 +180,17 @@ openNotificationDestination=async function(notification){
   }
   return a2c42OldNotificationDestination(notification);
 };
+
+let a2c60MessageRefreshTimer=null;
+function a2c60StartMessageRefresh(){
+  clearInterval(a2c60MessageRefreshTimer);
+  a2c60MessageRefreshTimer=setInterval(()=>{
+    if(state.user&&state.tab==='messages'&&!document.hidden){
+      a2c42RefreshMessagesView?.();
+    }
+  },12000);
+}
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&state.tab==='messages')a2c42RefreshMessagesView?.();
+});
+a2c60StartMessageRefresh();

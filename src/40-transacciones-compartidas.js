@@ -234,7 +234,7 @@ openA2C42Conversation=async function(conversationId,friendId){
     event.preventDefault();const button=event.submitter,body=String(new FormData(event.currentTarget).get('body')||'').trim();if(!body)return;
     busy(button,true);const {error}=await sb.rpc('a2c_send_message_v42',{p_friend_id:friendId,p_body:body});busy(button,false);
     if(error)return toast(error.message,true);
-    await a2c42LoadConversations();
-    openA2C42Conversation(conversationId,friendId);
+    await Promise.all([a2c42LoadConversations(),a2c42LoadFriends()]);
+    await openA2C42Conversation(conversationId,friendId);
   };
 };
