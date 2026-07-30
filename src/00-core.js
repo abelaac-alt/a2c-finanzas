@@ -1,3 +1,6 @@
+
+window.A2C_PLATFORM = window.A2CNative ? 'android' : 'web';
+
 let deferredInstallPrompt=null;
 if("serviceWorker" in navigator){
   window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(console.error));
@@ -261,12 +264,41 @@ if(!sb) fatal(new Error('Configura config.js con la URL y la clave pública de S
 else boot().catch(fatal);
 
 async function boot(){
+  try{
+    const nativeRaw=window.A2CNative?.getAuthSession?.();
+    const nativeSession=nativeRaw?JSON.parse(nativeRaw):null;
+    const current=await sb.auth.getSession();
+    if(!current?.data?.session&&nativeSession?.access_token&&nativeSession?.refresh_token){
+      await sb.auth.setSession({
+        access_token:nativeSession.access_token,
+        refresh_token:nativeSession.refresh_token
+      });
+    }
+  }catch(error){
+    console.warn('La restauración de sesión nativa no bloqueó la aplicación:',error);
+  }
   const {data:{session}}=await a2cWithTimeout(sb.auth.getSession(), A2C_BOOT_TIMEOUT_MS, 'la sesión');
+  if(session?.access_token&&session?.refresh_token){
+    window.A2CNative?.saveAuthSession?.(
+      session.access_token,
+      session.refresh_token,
+      session.user?.id||''
+    );
+  }
   state.user=session?.user||null;
   if(state.user) await a2cWithTimeout(enter(), A2C_BOOT_TIMEOUT_MS, 'la carga de tus datos'); else renderLogin();
   a2cMarkReady();
 
-  sb.auth.onAuthStateChange(async(_event,session)=>{
+  sb.auth.onAuthStateChange(async(event,session)=>{
+    if(session?.access_token&&session?.refresh_token){
+      window.A2CNative?.saveAuthSession?.(
+        session.access_token,
+        session.refresh_token,
+        session.user?.id||''
+      );
+    }else if(event==='SIGNED_OUT'){
+      window.A2CNative?.clearAuthSession?.();
+    }
     state.user=session?.user||null;
     if(state.user) await a2cWithTimeout(enter(), A2C_BOOT_TIMEOUT_MS, 'la actualización de la sesión'); else renderLogin();
     a2cMarkReady();
@@ -323,6 +355,15 @@ async function enter(){
   if(profile.active===false)throw new Error('Tu cuenta está desactivada.');
   state.profile=profile;
   await loadAll();
+  try{
+    await Promise.all([
+      typeof a2c42LoadFriends==='function'?a2c42LoadFriends():Promise.resolve(),
+      typeof a2c42LoadConversations==='function'?a2c42LoadConversations():Promise.resolve()
+    ]);
+    if(typeof a2c42StartRealtime==='function')a2c42StartRealtime();
+  }catch(chatError){
+    console.warn('El chat no bloqueó el inicio:',chatError);
+  }
   renderShell();
 
   setTimeout(async()=>{
@@ -1127,22 +1168,6 @@ function resourceOptions(selected='',kind='expense'){
   return normal+crypto;
 }
 function goalOptions(selected=''){return `<option value="">Sin objetivo</option>${state.resources.filter(r=>r.type==='goal').map(r=>`<option value="${r.id}" ${selected===r.id?'selected':''}>${esc(r.name)}</option>`).join('')}`}
-
-const A2C55_STYLE=`<style>
-.modal-card{border-radius:24px!important;border:1px solid #e9e5ef!important;box-shadow:0 18px 50px rgba(38,27,53,.14)!important}
-.modal-head{border-bottom:1px solid #ece8f0;padding-bottom:14px;margin-bottom:16px}
-.field input,.field select,.field textarea{border-radius:14px!important;border:1px solid #e8e3ed!important;background:#fff!important}
-.field input:focus,.field select:focus,.field textarea:focus{border-color:#8b72ed!important;box-shadow:0 0 0 3px rgba(117,87,255,.1)!important}
-.btn{border-radius:12px!important}.btn.primary{box-shadow:0 7px 16px rgba(117,87,255,.2)}
-.card,.row,.transaction-row,.tool-card{border-color:#ebe6ef!important;box-shadow:0 5px 18px rgba(35,25,48,.05)}
-.a2c55-shared-panel{padding:14px;border:1px solid #ded6ed;border-radius:18px;background:linear-gradient(145deg,#faf8ff,#f5f7fb)}
-.a2c55-shared-head{display:flex;gap:11px;align-items:flex-start;margin-bottom:12px}.a2c55-shared-icon{width:38px;height:38px;border-radius:13px;background:#e9e2ff;color:#6747d7;display:grid;place-items:center;font-size:19px}
-.a2c55-shared-head>div{flex:1}.a2c55-shared-head strong,.a2c55-shared-head small{display:block}.a2c55-shared-head small{font-size:11px;color:var(--muted);margin-top:2px}
-.a2c55-split-list{display:grid;gap:8px}.a2c55-split-item{display:flex;align-items:center;gap:9px;padding:10px;background:#fff;border:1px solid #e9e5ef;border-radius:14px}
-.a2c55-split-item>span{flex:1}.a2c55-split-item strong,.a2c55-split-item small{display:block}.a2c55-split-item small{font-size:10px;color:var(--muted)}
-.a2c55-split-actions{display:flex;gap:5px;flex-wrap:wrap}.a2c55-split-actions .btn{padding:6px 8px;min-height:32px;font-size:10px}.a2c55-lock-note{margin-top:9px;padding:9px;border-radius:11px;background:#f0ecf8;color:#625872;font-size:11px}
-</style>`;
-
 function openTransaction(tx={}){
   const editing=Boolean(tx.id),selectedKind=tx.kind||'expense',txCryptoLedger=tx.payment_method==='crypto'?state.cryptoLedger.find(row=>row.transaction_id===tx.id):null,txCryptoHolding=txCryptoLedger?state.cryptoHoldings.find(h=>h.symbol===txCryptoLedger.symbol&&String(h.resource_id||'')===String(txCryptoLedger.source_resource_id||'')):null,selectedResource=txCryptoHolding?`crypto:${txCryptoHolding.id}`:(tx.resource_id||'');
   modal(`<form id="tx-form"><div class="modal-head"><div><h2>${editing?'Editar':'Nuevo'} movimiento</h2><p class="muted">Registra el concepto, el importe y los detalles necesarios.</p></div><button type="button" class="close-btn" data-close>×</button></div>
@@ -1152,7 +1177,7 @@ function openTransaction(tx={}){
     <div class="field hidden" id="saving-goal-field"><label>Objetivo de ahorro</label><select name="saving_goal_id">${goalOptions(tx.kind==='saving'&&tx.resource?.type==='goal'?tx.resource_id:'')}</select><small class="muted">Puedes asignar el ahorro a un objetivo o dejarlo sin objetivo.</small></div>
     <div class="investment-detail hidden" id="investment-detail"><div class="fuel-title">◆ Detalle de inversión</div><div class="field"><label>Nombre de la empresa o criptomoneda</label><input name="investment_company" value="${esc(tx.kind==='investment'?(tx.concept||''):'')}" placeholder="Ej. Apple, Bitcoin, Ethereum…"></div><div id="stock-investment-fields"><div class="form-grid"><div class="field"><label>ISIN</label><input name="investment_isin" maxlength="12" value="${esc(tx.investment_isin||'')}" placeholder="Ej. US0378331005" autocapitalize="characters"></div><div class="field"><label>Número de acciones</label><input name="investment_quantity" inputmode="decimal" value="${tx.investment_quantity||''}" placeholder="0"></div><div class="field"><label>Precio por acción (€)</label><input name="investment_unit_price" inputmode="decimal" value="${tx.investment_unit_price_cents?Number(tx.investment_unit_price_cents)/100:''}" placeholder="0,00"></div></div></div><div id="crypto-investment-fields" class="hidden"><div class="crypto-badge">₿ Compra de criptomoneda detectada</div><div class="form-grid"><div class="field"><label>Símbolo</label><input name="crypto_symbol" value="${esc(tx.crypto_symbol||'')}" maxlength="12" placeholder="BTC"></div><div class="field"><label>Precio de compra (€)</label><input name="crypto_unit_price" inputmode="decimal" value="${tx.crypto_unit_price_cents?Number(tx.crypto_unit_price_cents)/100:''}" placeholder="0,00"></div><div class="field"><label>Cantidad comprada</label><input name="crypto_quantity" inputmode="decimal" value="${tx.crypto_quantity||''}" placeholder="0,00000000"></div><div class="field"><label>Comisión (€)</label><input name="crypto_fee" inputmode="decimal" value="${tx.crypto_fee_cents?Number(tx.crypto_fee_cents)/100:''}" placeholder="0,00"></div></div><div class="fee-mode"><span>La comisión:</span><button type="button" class="fee-mode-btn ${tx.crypto_fee_mode!=='subtract'?'active':''}" data-fee-mode="add">＋ Se añade al total</button><button type="button" class="fee-mode-btn ${tx.crypto_fee_mode==='subtract'?'active':''}" data-fee-mode="subtract">− Se resta de la compra</button><input type="hidden" name="crypto_fee_mode" value="${tx.crypto_fee_mode||'add'}"></div><p class="muted crypto-help">Al restarla, mantienes el desembolso base y recibes una cantidad ligeramente menor de cripto.</p></div><div class="fuel-calculated" id="investment-calculated">Introduce los datos para calcular el total.</div></div>
     <div class="fuel-detail hidden" id="fuel-detail"><div class="fuel-title">⛽ Detalle de combustible</div><p class="muted">Al escribir “Combustible” —también gasolina, diésel o repostaje— se activan estos campos.</p><div class="form-grid"><div class="field"><label>Precio por litro (€)</label><input name="fuel_price" inputmode="decimal" value="${tx.fuel_price_per_liter_milli?Number(tx.fuel_price_per_liter_milli)/1000:''}" placeholder="1,650"></div><div class="field"><label>Litros repostados</label><input name="fuel_liters" inputmode="decimal" value="${tx.fuel_liters||''}" placeholder="0,00"></div><div class="field"><label>Km desde anterior</label><input name="fuel_km" inputmode="decimal" value="${tx.fuel_km||''}" placeholder="Opcional"></div></div><div class="fuel-calculated" id="fuel-calculated">Introduce el precio por litro y los litros repostados para calcular el total.</div></div>
-    ${editing&&state.expenseSplits.some(row=>row.transaction_id===tx.id&&row.owner_id===state.user.id)?`<div id="a2c55-existing-shared"></div>`:`<div class="split-expense-detail hidden" id="split-expense-detail"><div class="fuel-title">Dividir gasto</div><label class="split-enable"><input type="checkbox" id="split-enabled"><span><b>Compartir este gasto</b><small>Añade amigos en partes iguales o con importes personalizados.</small></span></label><div id="split-controls" class="hidden"><div class="split-mode-grid"><button type="button" class="split-mode-btn active" data-split-mode="equal">Partes iguales</button><button type="button" class="split-mode-btn" data-split-mode="custom">Importes diferentes</button></div><div id="split-people-list" class="split-people-list"></div><button type="button" class="btn" id="add-split-person">＋ Añadir persona</button><div class="split-summary" id="split-summary">Restante: ${money(tx.amount_cents||0)}</div></div></div>`}
+    <div class="split-expense-detail hidden" id="split-expense-detail"><div class="fuel-title">Dividir gasto</div><label class="split-enable"><input type="checkbox" id="split-enabled"><span><b>Compartir este gasto</b><small>Añade personas en partes iguales o con importes personalizados.</small></span></label><div id="split-controls" class="hidden"><div class="split-mode-grid"><button type="button" class="split-mode-btn active" data-split-mode="equal">Partes iguales</button><button type="button" class="split-mode-btn" data-split-mode="custom">Importes diferentes</button></div><div id="split-people-list" class="split-people-list"></div><button type="button" class="btn" id="add-split-person">＋ Añadir persona</button><div class="split-summary" id="split-summary">Restante: ${money(tx.amount_cents||0)}</div></div></div>
     <div class="field"><label>Importe total (€)</label><input name="amount" inputmode="decimal" required value="${tx.amount_cents?Number(tx.amount_cents)/100:''}"></div><div class="field"><label>Fecha</label><input name="date" type="date" required value="${tx.occurred_on||today()}"></div><div class="field"><label>Notas</label><textarea name="notes">${esc(tx.notes||'')}</textarea></div>
     <div class="field receipt-picker"><label>Justificante</label><div class="receipt-picker-actions"><button type="button" class="btn receipt-source-btn" id="open-integrated-camera">📷 Abrir cámara</button><label class="btn receipt-source-btn" for="receipt-gallery">▣ Elegir imagen</label></div><input id="receipt-gallery" name="receipt_gallery" class="receipt-file-input" type="file" accept="image/*"><small class="muted receipt-selection" id="receipt-selection">No se ha seleccionado ninguna imagen.</small></div>
     <div class="actions tx-form-actions">${editing?'<button type="button" class="btn danger" id="delete-tx">Borrar</button><button type="button" class="btn repeat-action-btn" id="repeat-tx-modal"><span>🔁</span> Repetir</button>':''}<button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`,true);
@@ -1174,26 +1199,59 @@ function openTransaction(tx={}){
   document.querySelectorAll('[data-split-mode]').forEach(b=>b.onclick=()=>{splitMode=b.dataset.splitMode;document.querySelectorAll('[data-split-mode]').forEach(x=>x.classList.toggle('active',x===b));recalcSplits()});
   amount.addEventListener('input',recalcSplits);
   if(existingSplits.length){
-    const host=document.querySelector('#a2c55-existing-shared');
-    if(host){
-      host.innerHTML=`${A2C55_STYLE}<section class="a2c55-shared-panel"><div class="a2c55-shared-head"><span class="a2c55-shared-icon">⇄</span><div><strong>Gasto compartido</strong><small>Ya no se puede volver a dividir. Gestiona cada parte.</small></div></div><div class="a2c55-split-list">${existingSplits.map(row=>`<article class="a2c55-split-item"><span><strong>${esc(row.debtor?.display_name||row.person_name||'Persona')}</strong><small>${row.status==='paid'?(row.paid_manually?'Liquidado manualmente':'Pagado por el amigo'):'Pendiente de pago'}</small></span><b>${money(row.amount_cents)}</b>${row.status==='pending'?`<div class="a2c55-split-actions"><button type="button" class="btn" data-a2c54-main-edit="${row.id}">Editar</button><button type="button" class="btn primary" data-a2c54-main-paid="${row.id}">Liquidar</button><button type="button" class="btn danger" data-a2c54-main-delete="${row.id}">Eliminar</button></div>`:''}</article>`).join('')}</div><div class="a2c55-lock-note">Los cambios se enviarán al chat como una nueva versión y la anterior quedará desactivada.</div></section>`;
-      document.querySelectorAll('[data-a2c54-main-edit]').forEach(b=>b.onclick=()=>openA2C54EditSplit(b.dataset.a2c54MainEdit,tx.id));
-      document.querySelectorAll('[data-a2c54-main-paid]').forEach(b=>b.onclick=()=>a2c54SettleSplit(b.dataset.a2c54MainPaid,tx.id));
-      document.querySelectorAll('[data-a2c54-main-delete]').forEach(b=>b.onclick=()=>a2c54DeleteSplit(b.dataset.a2c54MainDelete,tx.id));
-    }
+    splitToggle.checked=true;
+    splitToggle.disabled=true;
+    splitToggle.closest('.split-enable')?.classList.add('hidden');
+    splitControls.classList.add('hidden');
+    splitBox?.querySelector('.fuel-title')?.replaceChildren(document.createTextNode('Gasto compartido'));
+    splitBox?.insertAdjacentHTML('beforeend',`${A2C_SHARED_TX_STYLE}<div class="notice">Este gasto ya está compartido. No se puede volver a compartir; gestiona cada parte desde la información inferior.</div><div class="a2c54-main-split-list">
+      ${existingSplits.map(row=>{
+        const person=row.debtor?.display_name||row.person_name||'Persona';
+        return `<article class="a2c54-main-split-row">
+          <span><strong>${esc(person)}</strong><small>${row.status==='paid'?(row.paid_manually?'Liquidado manualmente':'Pagado por el amigo'):'Pendiente de pago'}</small></span>
+          <b class="${row.status==='paid'?'paid':'pending'}">${money(row.amount_cents)}</b>
+          ${row.status==='pending'?`<div class="a2c54-main-split-actions">
+            <button type="button" class="btn" data-a2c54-main-edit="${row.id}">Editar</button>
+            <button type="button" class="btn primary" data-a2c54-main-paid="${row.id}">Liquidar</button>
+            <button type="button" class="btn danger" data-a2c54-main-delete="${row.id}">Eliminar</button>
+          </div>`:''}
+        </article>`;
+      }).join('')}
+    </div>`);
+    document.querySelectorAll('[data-a2c54-main-edit]').forEach(button=>button.onclick=()=>openA2C54EditSplit(button.dataset.a2c54MainEdit,tx.id));
+    document.querySelectorAll('[data-a2c54-main-paid]').forEach(button=>button.onclick=()=>a2c54SettleSplit(button.dataset.a2c54MainPaid,tx.id));
+    document.querySelectorAll('[data-a2c54-main-delete]').forEach(button=>button.onclick=()=>a2c54DeleteSplit(button.dataset.a2c54MainDelete,tx.id));
   }
   const syncInvestment=()=>{const box=document.querySelector('#investment-calculated');if(!box)return;const crypto=isCryptoConcept(form.elements.investment_company?.value||concept.value);document.querySelector('#stock-investment-fields')?.classList.toggle('hidden',crypto);document.querySelector('#crypto-investment-fields')?.classList.toggle('hidden',!crypto);if(crypto){const symbol=cryptoSymbolFromConcept(form.elements.investment_company?.value||concept.value);if(symbol&&!form.elements.crypto_symbol.value)form.elements.crypto_symbol.value=symbol;const quantity=cryptoQty(form.elements.crypto_quantity?.value),unit=decimal(form.elements.crypto_unit_price?.value),fee=decimal(form.elements.crypto_fee?.value),mode=form.elements.crypto_fee_mode?.value||'add';if(quantity>0&&unit>0){const base=quantity*unit,total=mode==='add'?base+Math.max(0,fee):base;const received=mode==='subtract'&&fee>0?Math.max(0,(base-fee)/unit):quantity;amount.value=total.toFixed(2);box.textContent=`Total: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(total)} · Recibirás ${received.toLocaleString('es-ES',{maximumFractionDigits:8})} ${form.elements.crypto_symbol.value||symbol}.`;}else box.textContent='Introduce precio y cantidad para calcular la compra.';return;}const quantity=positive(form.elements.investment_quantity?.value),unitPrice=positive(form.elements.investment_unit_price?.value);if(quantity&&unitPrice){const total=quantity*unitPrice;amount.value=total.toFixed(2);box.textContent=`Total calculado: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(total)} (${quantity.toLocaleString('es-ES',{maximumFractionDigits:6})} acciones × ${unitPrice.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:4})} €).`;}else box.textContent='Introduce el número de acciones y el precio para calcular el total.';};
   const syncCryptoPayment=()=>{const box=document.querySelector('#crypto-payment-calculated');if(!box)return;const holding=String(resource.value).startsWith('crypto:')?state.cryptoHoldings.find(h=>h.id===String(resource.value).slice(7)):null;const qty=cryptoQty(form.elements.crypto_spend_quantity?.value),unit=positive(form.elements.crypto_spend_unit_price?.value);if(holding&&qty>0&&unit>0){amount.value=(qty*unit).toFixed(2);box.textContent=`Pagarás ${qty.toLocaleString('es-ES',{maximumFractionDigits:8})} ${holding.symbol} · Valor: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(qty*unit)}.`;}else box.textContent='Selecciona una criptomoneda e indica cantidad y valor.';};
   const update=()=>{const saving=kind.value==='saving',investment=kind.value==='investment',cryptoPayment=kind.value==='expense'&&String(resource.value).startsWith('crypto:'),fuel=kind.value==='expense'&&!cryptoPayment&&isFuelConcept(concept.value);document.querySelector('#saving-goal-field').classList.toggle('hidden',!saving);splitBox?.classList.toggle('hidden',kind.value!=='expense');document.querySelector('#investment-detail').classList.toggle('hidden',!investment);document.querySelector('#fuel-detail').classList.toggle('hidden',!fuel);document.querySelector('#crypto-payment-detail')?.classList.toggle('hidden',!cryptoPayment);form.elements.payment_method.disabled=cryptoPayment;if(cryptoPayment)form.elements.payment_method.value='bank';if(investment&&form.elements.investment_company&&!form.elements.investment_company.value)form.elements.investment_company.value=concept.value;const selected=state.resources.find(r=>r.id===resource.value),selectedHolding=String(resource.value).startsWith('crypto:')?state.cryptoHoldings.find(h=>h.id===String(resource.value).slice(7)):null;document.querySelector('#piggy-transfer-note').textContent=selected?.type==='piggy'&&(kind.value==='income'||saving)?'Esta aportación se restará automáticamente de la cuenta principal.':selected?.type==='folder'?'Este movimiento afectará al saldo de la cuenta principal.':selectedHolding?`Disponible: ${Number(selectedHolding.quantity).toLocaleString('es-ES',{maximumFractionDigits:8})} ${selectedHolding.symbol}.`:'';syncFuel();syncInvestment();syncCryptoPayment();};
   const syncFuel=()=>{const liters=positive(form.elements.fuel_liters?.value),price=positive(form.elements.fuel_price?.value),km=positive(form.elements.fuel_km?.value),box=document.querySelector('#fuel-calculated');if(!box)return;if(liters&&price){const total=liters*price;amount.value=total.toFixed(2);const consumption=km?liters/km*100:null;box.textContent=`Total calculado: ${new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(total)} (${liters.toLocaleString('es-ES')} L × ${price.toLocaleString('es-ES',{minimumFractionDigits:3,maximumFractionDigits:3})} €/L).${consumption?` Consumo estimado: ${consumption.toLocaleString('es-ES',{maximumFractionDigits:2})} L/100 km.`:''}`;}else box.textContent='Introduce litros y precio por litro para calcular el total.';};
   kind.onchange=()=>{const old=resource.value;resource.innerHTML=resourceOptions(old,kind.value);update()};resource.onchange=update;concept.oninput=()=>{if(kind.value==='investment'&&form.elements.investment_company&&!form.elements.investment_company.dataset.edited)form.elements.investment_company.value=concept.value;update();};form.elements.investment_company?.addEventListener('input',()=>{form.elements.investment_company.dataset.edited='1';concept.value=form.elements.investment_company.value;});form.elements.investment_quantity?.addEventListener('input',syncInvestment);form.elements.investment_unit_price?.addEventListener('input',syncInvestment);form.elements.crypto_unit_price?.addEventListener('input',syncInvestment);form.elements.crypto_quantity?.addEventListener('input',syncInvestment);form.elements.crypto_spend_quantity?.addEventListener('input',syncCryptoPayment);form.elements.crypto_spend_unit_price?.addEventListener('input',syncCryptoPayment);form.elements.crypto_fee?.addEventListener('input',syncInvestment);document.querySelectorAll('[data-fee-mode]').forEach(btn=>btn.onclick=()=>{form.elements.crypto_fee_mode.value=btn.dataset.feeMode;document.querySelectorAll('[data-fee-mode]').forEach(x=>x.classList.toggle('active',x===btn));syncInvestment();});form.elements.fuel_liters?.addEventListener('input',syncFuel);form.elements.fuel_price?.addEventListener('input',syncFuel);form.elements.fuel_km?.addEventListener('input',syncFuel);update();
-  form.onsubmit=async e=>{e.preventDefault();const b=e.submitter,fd=new FormData(form);busy(b,true);try{const kindValue=String(fd.get('kind')),goalId=kindValue==='saving'?(fd.get('saving_goal_id')||null):null;const rawResource=String(fd.get('resource_id')||'');const cryptoPayment=kindValue==='expense'&&rawResource.startsWith('crypto:');const selectedHolding=cryptoPayment?state.cryptoHoldings.find(h=>h.id===rawResource.slice(7)):null;const selectedResourceId=cryptoPayment?(selectedHolding?.resource_id||null):(goalId||rawResource||null),selectedResource=state.resources.find(r=>r.id===selectedResourceId);const fuelActive=kindValue==='expense'&&!cryptoPayment&&isFuelConcept(fd.get('concept'));const investmentActive=kindValue==='investment';const cryptoActive=investmentActive&&isCryptoConcept(fd.get('investment_company')||fd.get('concept'));const liters=fuelActive?positive(fd.get('fuel_liters')):null,price=fuelActive?positive(fd.get('fuel_price')):null,km=fuelActive?positive(fd.get('fuel_km')):null;const investmentCompany=investmentActive?String(fd.get('investment_company')||fd.get('concept')||'').trim():String(fd.get('concept')||'').trim();const investmentIsin=investmentActive?String(fd.get('investment_isin')||'').trim().toUpperCase():null;const investmentQuantity=investmentActive?positive(fd.get('investment_quantity')):null;const investmentUnitPriceCents=investmentActive&&!cryptoActive?cents(fd.get('investment_unit_price')):null;const cryptoSymbol=cryptoActive?String(fd.get('crypto_symbol')||cryptoSymbolFromConcept(investmentCompany)).trim().toUpperCase():null;const cryptoRequestedQty=cryptoActive?cryptoQty(fd.get('crypto_quantity')):null;const cryptoUnitPriceCents=cryptoActive?cents(fd.get('crypto_unit_price')):null;const cryptoFeeCents=cryptoActive?Math.max(0,cents(fd.get('crypto_fee'))):0;const cryptoFeeMode=cryptoActive?String(fd.get('crypto_fee_mode')||'add'):null;const cryptoBaseCents=cryptoActive?Math.round(cryptoRequestedQty*cryptoUnitPriceCents):0;const cryptoEffectiveQty=cryptoActive&&cryptoFeeMode==='subtract'&&cryptoFeeCents>0&&cryptoUnitPriceCents>0?Math.max(0,(cryptoBaseCents-cryptoFeeCents)/cryptoUnitPriceCents):cryptoRequestedQty;const payload={kind:kindValue,category_id:null,merchant:'',payment_method:String(fd.get('payment_method')||'bank'),amount_cents:cents(fd.get('amount')),concept:investmentCompany,occurred_on:fd.get('date'),notes:String(fd.get('notes')||''),investment_isin:investmentIsin,investment_quantity:investmentQuantity,investment_unit_price_cents:investmentUnitPriceCents,crypto_symbol:cryptoSymbol,crypto_quantity:cryptoEffectiveQty,crypto_unit_price_cents:cryptoUnitPriceCents,crypto_fee_cents:cryptoFeeCents,crypto_fee_mode:cryptoFeeMode,fuel_liters:liters,fuel_price_per_liter_milli:price?Math.round(price*1000):null,fuel_km:km,fuel_consumption_l100km:liters&&km?Number((liters/km*100).toFixed(2)):null};if(fuelActive&&(!price||!liters))throw new Error('Indica el precio por litro y los litros repostados.');if(investmentActive){if(!investmentCompany)throw new Error('Indica el nombre de la inversión.');if(cryptoActive){if(!cryptoSymbol)throw new Error('Indica el símbolo de la criptomoneda.');if(!(cryptoRequestedQty>0))throw new Error('La cantidad de cripto debe ser mayor que cero.');if(!(cryptoUnitPriceCents>0))throw new Error('El precio de compra debe ser mayor que cero.');if(cryptoFeeMode==='subtract'&&cryptoFeeCents>=cryptoBaseCents)throw new Error('La comisión no puede ser igual o superior al importe de la compra.');payload.amount_cents=cryptoFeeMode==='add'?cryptoBaseCents+cryptoFeeCents:cryptoBaseCents;payload.investment_isin=null;payload.investment_quantity=null;payload.investment_unit_price_cents=null;}else{if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(investmentIsin||''))throw new Error('El ISIN debe contener 12 caracteres válidos.');if(!(investmentQuantity>0))throw new Error('El número de acciones debe ser mayor que cero.');if(!(investmentUnitPriceCents>0))throw new Error('El precio por acción debe ser mayor que cero.');payload.amount_cents=Math.round(investmentQuantity*investmentUnitPriceCents);}}if(payload.amount_cents<=0)throw new Error('El importe debe ser mayor que cero.');let id=tx.id;if(cryptoPayment){const qty=cryptoQty(fd.get('crypto_spend_quantity')),unit=cents(fd.get('crypto_spend_unit_price'));if(!selectedHolding)throw new Error('Selecciona una criptomoneda disponible.');if(qty<=0||(!editing&&qty>Number(selectedHolding.quantity)))throw new Error('La cantidad no es válida o supera el saldo disponible.');if(unit<=0)throw new Error('Indica un valor por unidad válido.');if(editing&&tx.payment_method==='crypto'){const {error}=await sb.rpc('a2c_update_crypto_payment',{p_transaction_id:tx.id,p_symbol:selectedHolding.symbol,p_quantity:qty,p_unit_price_cents:unit,p_resource_id:selectedHolding.resource_id||null,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes});if(error)throw error;id=tx.id;}else{const {data,error}=await sb.rpc('a2c_spend_crypto',{p_symbol:selectedHolding.symbol,p_quantity:qty,p_unit_price_cents:unit,p_resource_id:selectedHolding.resource_id||null,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes});if(error)throw error;id=data;}}else if(editing&&tx.crypto_symbol&&tx.kind==='investment'){const {error}=await sb.rpc('a2c_update_crypto_purchase',{p_transaction_id:tx.id,p_symbol:payload.crypto_symbol,p_crypto_name:payload.concept,p_quantity:payload.crypto_quantity,p_unit_price_cents:payload.crypto_unit_price_cents,p_fee_cents:payload.crypto_fee_cents,p_fee_mode:payload.crypto_fee_mode,p_resource_id:selectedResourceId});if(error)throw error;}else if(editing){const {error}=await sb.rpc('update_finance_transaction_v4',{p_transaction_id:tx.id,p_kind:payload.kind,p_category_id:null,p_merchant:'',p_payment_method:payload.payment_method,p_amount_cents:payload.amount_cents,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes,p_investment_isin:payload.investment_isin,p_investment_quantity:payload.investment_quantity,p_investment_unit_price_cents:payload.investment_unit_price_cents});if(error)throw error;const {error:extra}=await sb.from('finance_transactions').update({fuel_liters:payload.fuel_liters,fuel_price_per_liter_milli:payload.fuel_price_per_liter_milli,fuel_km:payload.fuel_km,fuel_consumption_l100km:payload.fuel_consumption_l100km,category_id:null,merchant:''}).eq('id',id);if(extra)throw extra;}else if(selectedResource?.type==='piggy'&&(kindValue==='income'||kindValue==='saving')){const {data,error}=await sb.rpc('create_piggy_transfer_v4',{p_piggy_id:selectedResource.id,p_amount_cents:payload.amount_cents,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes,p_payment_method:payload.payment_method});if(error)throw error;id=data;}else{const {data}=await retrySupabase(()=>sb.from('finance_transactions').insert({...payload,creator_id:state.user.id,resource_id:selectedResourceId}).select('id').single());id=data.id;}if(cryptoActive&&!editing){const {error:cryptoError}=await sb.rpc('a2c_record_crypto_purchase',{p_transaction_id:id,p_symbol:payload.crypto_symbol,p_crypto_name:payload.concept,p_quantity:payload.crypto_quantity,p_unit_price_cents:payload.crypto_unit_price_cents,p_fee_cents:payload.crypto_fee_cents,p_fee_mode:payload.crypto_fee_mode,p_resource_id:selectedResourceId});if(cryptoError)throw cryptoError;}const originalFile=pendingReceiptFile||galleryInput?.files?.[0]||null;if(originalFile instanceof File&&originalFile.size){const file=await compressReceipt(originalFile);const ext=(file.type==='image/jpeg'?'jpg':(file.name.split('.').pop()||'img').toLowerCase());const path=`${state.user.id}/${id}/${crypto.randomUUID()}.${ext}`;const {error}=await sb.storage.from('receipts').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});if(error)throw error;const {error:pe}=await sb.from('finance_transactions').update({receipt_path:path}).eq('id',id);if(pe)throw pe;}if(kindValue==='expense'&&(!editing||existingSplits.length===0)){await sb.from('expense_splits').delete().eq('transaction_id',id).eq('owner_id',state.user.id);if(splitToggle?.checked){const splitRows=[...splitList.querySelectorAll('.split-person-row')].map(r=>({owner_id:state.user.id,transaction_id:id,debtor_user_id:r.querySelector('.split-user').value||null,person_name:String(r.querySelector('.split-name').value||'').trim()||null,amount_cents:cents(r.querySelector('.split-amount').value),status:'pending'})).filter(r=>r.amount_cents>0);if(splitRows.length){
-  const {data:createdSplits,error:splitError}=await sb.from('expense_splits').insert(splitRows).select('id,debtor_user_id');
+  form.onsubmit=async e=>{e.preventDefault();const b=e.submitter,fd=new FormData(form);busy(b,true);try{const kindValue=String(fd.get('kind')),goalId=kindValue==='saving'?(fd.get('saving_goal_id')||null):null;const rawResource=String(fd.get('resource_id')||'');const cryptoPayment=kindValue==='expense'&&rawResource.startsWith('crypto:');const selectedHolding=cryptoPayment?state.cryptoHoldings.find(h=>h.id===rawResource.slice(7)):null;const selectedResourceId=cryptoPayment?(selectedHolding?.resource_id||null):(goalId||rawResource||null),selectedResource=state.resources.find(r=>r.id===selectedResourceId);const fuelActive=kindValue==='expense'&&!cryptoPayment&&isFuelConcept(fd.get('concept'));const investmentActive=kindValue==='investment';const cryptoActive=investmentActive&&isCryptoConcept(fd.get('investment_company')||fd.get('concept'));const liters=fuelActive?positive(fd.get('fuel_liters')):null,price=fuelActive?positive(fd.get('fuel_price')):null,km=fuelActive?positive(fd.get('fuel_km')):null;const investmentCompany=investmentActive?String(fd.get('investment_company')||fd.get('concept')||'').trim():String(fd.get('concept')||'').trim();const investmentIsin=investmentActive?String(fd.get('investment_isin')||'').trim().toUpperCase():null;const investmentQuantity=investmentActive?positive(fd.get('investment_quantity')):null;const investmentUnitPriceCents=investmentActive&&!cryptoActive?cents(fd.get('investment_unit_price')):null;const cryptoSymbol=cryptoActive?String(fd.get('crypto_symbol')||cryptoSymbolFromConcept(investmentCompany)).trim().toUpperCase():null;const cryptoRequestedQty=cryptoActive?cryptoQty(fd.get('crypto_quantity')):null;const cryptoUnitPriceCents=cryptoActive?cents(fd.get('crypto_unit_price')):null;const cryptoFeeCents=cryptoActive?Math.max(0,cents(fd.get('crypto_fee'))):0;const cryptoFeeMode=cryptoActive?String(fd.get('crypto_fee_mode')||'add'):null;const cryptoBaseCents=cryptoActive?Math.round(cryptoRequestedQty*cryptoUnitPriceCents):0;const cryptoEffectiveQty=cryptoActive&&cryptoFeeMode==='subtract'&&cryptoFeeCents>0&&cryptoUnitPriceCents>0?Math.max(0,(cryptoBaseCents-cryptoFeeCents)/cryptoUnitPriceCents):cryptoRequestedQty;const payload={kind:kindValue,category_id:null,merchant:'',payment_method:String(fd.get('payment_method')||'bank'),amount_cents:cents(fd.get('amount')),concept:investmentCompany,occurred_on:fd.get('date'),notes:String(fd.get('notes')||''),investment_isin:investmentIsin,investment_quantity:investmentQuantity,investment_unit_price_cents:investmentUnitPriceCents,crypto_symbol:cryptoSymbol,crypto_quantity:cryptoEffectiveQty,crypto_unit_price_cents:cryptoUnitPriceCents,crypto_fee_cents:cryptoFeeCents,crypto_fee_mode:cryptoFeeMode,fuel_liters:liters,fuel_price_per_liter_milli:price?Math.round(price*1000):null,fuel_km:km,fuel_consumption_l100km:liters&&km?Number((liters/km*100).toFixed(2)):null};if(fuelActive&&(!price||!liters))throw new Error('Indica el precio por litro y los litros repostados.');if(investmentActive){if(!investmentCompany)throw new Error('Indica el nombre de la inversión.');if(cryptoActive){if(!cryptoSymbol)throw new Error('Indica el símbolo de la criptomoneda.');if(!(cryptoRequestedQty>0))throw new Error('La cantidad de cripto debe ser mayor que cero.');if(!(cryptoUnitPriceCents>0))throw new Error('El precio de compra debe ser mayor que cero.');if(cryptoFeeMode==='subtract'&&cryptoFeeCents>=cryptoBaseCents)throw new Error('La comisión no puede ser igual o superior al importe de la compra.');payload.amount_cents=cryptoFeeMode==='add'?cryptoBaseCents+cryptoFeeCents:cryptoBaseCents;payload.investment_isin=null;payload.investment_quantity=null;payload.investment_unit_price_cents=null;}else{if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(investmentIsin||''))throw new Error('El ISIN debe contener 12 caracteres válidos.');if(!(investmentQuantity>0))throw new Error('El número de acciones debe ser mayor que cero.');if(!(investmentUnitPriceCents>0))throw new Error('El precio por acción debe ser mayor que cero.');payload.amount_cents=Math.round(investmentQuantity*investmentUnitPriceCents);}}if(payload.amount_cents<=0)throw new Error('El importe debe ser mayor que cero.');let id=tx.id;if(cryptoPayment){const qty=cryptoQty(fd.get('crypto_spend_quantity')),unit=cents(fd.get('crypto_spend_unit_price'));if(!selectedHolding)throw new Error('Selecciona una criptomoneda disponible.');if(qty<=0||(!editing&&qty>Number(selectedHolding.quantity)))throw new Error('La cantidad no es válida o supera el saldo disponible.');if(unit<=0)throw new Error('Indica un valor por unidad válido.');if(editing&&tx.payment_method==='crypto'){const {error}=await sb.rpc('a2c_update_crypto_payment',{p_transaction_id:tx.id,p_symbol:selectedHolding.symbol,p_quantity:qty,p_unit_price_cents:unit,p_resource_id:selectedHolding.resource_id||null,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes});if(error)throw error;id=tx.id;}else{const {data,error}=await sb.rpc('a2c_spend_crypto',{p_symbol:selectedHolding.symbol,p_quantity:qty,p_unit_price_cents:unit,p_resource_id:selectedHolding.resource_id||null,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes});if(error)throw error;id=data;}}else if(editing&&tx.crypto_symbol&&tx.kind==='investment'){const {error}=await sb.rpc('a2c_update_crypto_purchase',{p_transaction_id:tx.id,p_symbol:payload.crypto_symbol,p_crypto_name:payload.concept,p_quantity:payload.crypto_quantity,p_unit_price_cents:payload.crypto_unit_price_cents,p_fee_cents:payload.crypto_fee_cents,p_fee_mode:payload.crypto_fee_mode,p_resource_id:selectedResourceId});if(error)throw error;}else if(editing){const {error}=await sb.rpc('update_finance_transaction_v4',{p_transaction_id:tx.id,p_kind:payload.kind,p_category_id:null,p_merchant:'',p_payment_method:payload.payment_method,p_amount_cents:payload.amount_cents,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes,p_investment_isin:payload.investment_isin,p_investment_quantity:payload.investment_quantity,p_investment_unit_price_cents:payload.investment_unit_price_cents});if(error)throw error;const {error:extra}=await sb.from('finance_transactions').update({fuel_liters:payload.fuel_liters,fuel_price_per_liter_milli:payload.fuel_price_per_liter_milli,fuel_km:payload.fuel_km,fuel_consumption_l100km:payload.fuel_consumption_l100km,category_id:null,merchant:''}).eq('id',id);if(extra)throw extra;}else if(selectedResource?.type==='piggy'&&(kindValue==='income'||kindValue==='saving')){const {data,error}=await sb.rpc('create_piggy_transfer_v4',{p_piggy_id:selectedResource.id,p_amount_cents:payload.amount_cents,p_concept:payload.concept,p_occurred_on:payload.occurred_on,p_notes:payload.notes,p_payment_method:payload.payment_method});if(error)throw error;id=data;}else{const {data}=await retrySupabase(()=>sb.from('finance_transactions').insert({...payload,creator_id:state.user.id,resource_id:selectedResourceId}).select('id').single());id=data.id;}if(cryptoActive&&!editing){const {error:cryptoError}=await sb.rpc('a2c_record_crypto_purchase',{p_transaction_id:id,p_symbol:payload.crypto_symbol,p_crypto_name:payload.concept,p_quantity:payload.crypto_quantity,p_unit_price_cents:payload.crypto_unit_price_cents,p_fee_cents:payload.crypto_fee_cents,p_fee_mode:payload.crypto_fee_mode,p_resource_id:selectedResourceId});if(cryptoError)throw cryptoError;}const originalFile=pendingReceiptFile||galleryInput?.files?.[0]||null;if(originalFile instanceof File&&originalFile.size){const file=await compressReceipt(originalFile);const ext=(file.type==='image/jpeg'?'jpg':(file.name.split('.').pop()||'img').toLowerCase());const path=`${state.user.id}/${id}/${crypto.randomUUID()}.${ext}`;const {error}=await sb.storage.from('receipts').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});if(error)throw error;const {error:pe}=await sb.from('finance_transactions').update({receipt_path:path}).eq('id',id);if(pe)throw pe;}if(kindValue==='expense'&&!existingSplits.length){await sb.from('expense_splits').delete().eq('transaction_id',id).eq('owner_id',state.user.id);if(splitToggle?.checked){const splitRows=[...splitList.querySelectorAll('.split-person-row')].map(r=>({owner_id:state.user.id,transaction_id:id,debtor_user_id:r.querySelector('.split-user').value||null,person_name:String(r.querySelector('.split-name').value||'').trim()||null,amount_cents:cents(r.querySelector('.split-amount').value),status:'pending'})).filter(r=>r.amount_cents>0);if(splitRows.length){
+  const {data:createdSplits,error:splitError}=await sb.from('expense_splits')
+    .insert(splitRows)
+    .select('id,debtor_user_id');
   if(splitError)throw splitError;
+  const activationErrors=[];
   for(const split of createdSplits||[]){
     if(!split.debtor_user_id)continue;
-    const {error:activateError}=await sb.rpc('a2c_activate_expense_split_v53',{p_split_id:split.id});
-    if(activateError)throw activateError;
+    let activated=false;
+    for(let attempt=0;attempt<2&&!activated;attempt++){
+      const {error:activateError}=await sb.rpc(
+        'a2c_activate_expense_split_v53',
+        {p_split_id:split.id}
+      );
+      if(!activateError){
+        activated=true;
+      }else if(attempt===1){
+        activationErrors.push(activateError.message);
+      }else{
+        await new Promise(resolve=>setTimeout(resolve,450));
+      }
+    }
+  }
+  if(activationErrors.length){
+    console.warn('El reparto se guardó, pero algún aviso/chat quedó pendiente:',activationErrors);
   }
 }}}closeModal();await refresh();toast(editing?'Movimiento actualizado':cryptoPayment?'Pago con cripto registrado':fuelActive?'Repostaje guardado':investmentActive?'Inversión guardada':goalId?'Ahorro asignado al objetivo':'Movimiento guardado');}catch(error){toast(error.message,true)}finally{busy(b,false)}};
   document.querySelector('#repeat-tx-modal')?.addEventListener('click',()=>{const copy={...tx,id:null,occurred_on:today(),receipt_path:null,is_transfer:false,transfer_group_id:null,transfer_role:null};openTransaction(copy);});
@@ -1732,14 +1790,14 @@ function openProfile(){
       <button type="button" class="a2c41-profile-option" id="a2c41-control-financial"><span>◫</span><div><strong>Control financiero</strong><small>Reglas, categorías y presupuestos</small></div><em>›</em></button>
       <button type="button" class="a2c41-profile-option" id="a2c42-friends-messages"><span>◎</span><div><strong>Amigos y mensajes</strong><small>Busca por @usuario y conversa de forma privada</small></div><em>›</em></button>
       ${window.A2CNative?`<button type="button" class="a2c41-profile-option" id="a2c41-profile-notifications"><span>◉</span><div><strong>Notificaciones</strong><small>Configura pagos y avisos</small></div><em>›</em></button>`:''}
-      ${window.A2CNative?`<button type="button" class="a2c41-profile-option" id="android-native-settings"><span>⌁</span><div><strong>Pagos y avisos Android</strong><small>Detección, permisos y diagnóstico</small></div><em>›</em></button>`:''}
+      ${window.A2CNative?`<button type="button" class="a2c41-profile-option a2c-payment-settings-entry" id="android-native-settings"><span>⌁</span><div><strong>Detección automática de pagos</strong><small>Permisos, simulación, historial y diagnóstico</small></div><em>›</em></button>`:''}
       <button type="button" class="a2c41-profile-option" id="a2c41-profile-settings"><span>⚙</span><div><strong>Ajustes</strong><small>Copias de seguridad y aplicación Android</small></div><em>›</em></button>
     </div><style>
       .a2c41-profile-menu{display:grid;gap:8px;margin:16px 0}
       .a2c41-profile-option{display:flex;align-items:center;gap:11px;width:100%;padding:11px 12px;border:1px solid #ebe7f1;border-radius:14px;background:#fff;text-align:left}
       .a2c41-profile-option>span{width:34px;height:34px;border-radius:11px;background:#f1edfa;display:grid;place-items:center;font-size:18px}
       .a2c41-profile-option>div{flex:1;min-width:0}.a2c41-profile-option strong,.a2c41-profile-option small{display:block}
-      .a2c41-profile-option small{font-size:11px;color:var(--muted);margin-top:2px}.a2c41-profile-option em{font-style:normal;color:#978da5;font-size:20px}
+      .a2c41-profile-option small{font-size:11px;color:var(--muted);margin-top:2px}.a2c41-profile-option em{font-style:normal;color:#978da5;font-size:20px}.a2c-payment-settings-entry{border-color:#d9cff7;background:linear-gradient(145deg,#fff,#f7f3ff)}.a2c-payment-settings-entry>span{background:#e9e1ff;color:#6548cb}
     </style><div class="actions"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary">Guardar</button></div></form>`);
   document.querySelector('#android-native-settings')?.addEventListener('click',()=>window.A2CNative?.openAndroidSettings());
   document.querySelector('#a2c41-control-financial')?.addEventListener('click',()=>{closeModal();openA2C40Control('rules')});
@@ -1777,8 +1835,25 @@ function openUserForm(p){
 // Integración Android 2.0: registra en Supabase el pago confirmado por el usuario.
 window.a2cAndroidRegisterPayment = async function (payment) {
   try {
-    const { data: { user }, error: userError } = await sb.auth.getUser();
-    if (userError || !user) return { ok:false, error:'Inicia sesión en A2C antes de registrar el pago.' };
+    let { data: { user }, error: userError } = await sb.auth.getUser();
+    if(userError||!user){
+      try{
+        const raw=window.A2CNative?.getAuthSession?.();
+        const nativeSession=raw?JSON.parse(raw):null;
+        if(nativeSession?.access_token&&nativeSession?.refresh_token){
+          await sb.auth.setSession({
+            access_token:nativeSession.access_token,
+            refresh_token:nativeSession.refresh_token
+          });
+          const retryUser=await sb.auth.getUser();
+          user=retryUser.data.user;
+          userError=retryUser.error;
+        }
+      }catch(restoreError){
+        console.warn(restoreError);
+      }
+    }
+    if (userError || !user) return { ok:false, error:'La sesión ha caducado. Abre A2C una vez para renovarla.' };
 
     const amountCents=Number(payment?.amount_cents||0);
     const merchant=String(payment?.merchant||'Pago con Google Pay').trim().slice(0,120);
@@ -1824,7 +1899,24 @@ window.a2cAndroidRegisterPayment = async function (payment) {
 // Datos actualizados para widgets y avisos nativos Android 2.5.
 window.a2cAndroidGetNativeData = async function(){
   try{
-    const {data:{user},error:userError}=await sb.auth.getUser();
+    let {data:{user},error:userError}=await sb.auth.getUser();
+    if(userError||!user){
+      try{
+        const raw=window.A2CNative?.getAuthSession?.();
+        const nativeSession=raw?JSON.parse(raw):null;
+        if(nativeSession?.access_token&&nativeSession?.refresh_token){
+          await sb.auth.setSession({
+            access_token:nativeSession.access_token,
+            refresh_token:nativeSession.refresh_token
+          });
+          const retryUser=await sb.auth.getUser();
+          user=retryUser.data.user;
+          userError=retryUser.error;
+        }
+      }catch(restoreError){
+        console.warn(restoreError);
+      }
+    }
     if(userError||!user)return {error:'not_authenticated'};
     const now=new Date(),monthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     const since30=new Date(now);since30.setDate(since30.getDate()-29);const since30Key=since30.toISOString().slice(0,10);
@@ -1852,6 +1944,70 @@ window.a2cAndroidGetNativeData = async function(){
     const budgets=(budgetResult.error?[]:(budgetResult.data||[])).map(budget=>{const spent=transactions.filter(row=>row.kind==='expense'&&String(row.occurred_on||'').startsWith(budget.period_month)&&detectBudgetCategory(row)===budget.category_key).reduce((sum,row)=>sum+Number(row.amount_cents||0),0);return {id:budget.id,name:budget.name,category_key:budget.category_key,amount_cents:Number(budget.amount_cents||0),spent_cents:spent,remaining_cents:Math.max(0,Number(budget.amount_cents||0)-spent),percentage:Number(budget.amount_cents||0)>0?Math.min(100,Math.round(spent/Number(budget.amount_cents||0)*100)):0};});
     const collaboration_notifications=(notificationResult.error?[]:(notificationResult.data||[])).filter(n=>/expense|request|resource|group|invitation|goal|folder|piggy/i.test(String(n.type||'')+' '+String(n.title||'')+' '+String(n.message||'')));
     const latestExpense=transactions.filter(row=>row.kind==='expense').sort((a,b)=>String(b.occurred_on||'').localeCompare(String(a.occurred_on||'')))[0]||null;
-    const debtsOwed=state.expenseSplits.filter(row=>row.debtor_user_id===state.user.id&&row.status==='pending').reduce((sum,row)=>sum+Number(row.amount_cents||0),0);const debtsReceivable=state.expenseSplits.filter(row=>row.owner_id===state.user.id&&row.status==='pending').reduce((sum,row)=>sum+Number(row.amount_cents||0),0);return {available_cents:available,month_income_cents:totals.income,month_expenses_cents:totals.expense,month_saving_cents:totals.saving,month_investment_cents:totals.investment,debts_owed_cents:debtsOwed,debts_receivable_cents:debtsReceivable,fuel_30d_liters:fuelLiters,fuel_30d_total_cents:fuelTotal,fuel_30d_average_milli:fuelAverageMilli,latest_expense_amount_cents:Number(latestExpense?.amount_cents||0),latest_expense_concept:String(latestExpense?.merchant||latestExpense?.concept||''),latest_expense_date:String(latestExpense?.occurred_on||''),scheduled,budgets,collaboration_notifications};
+    return {available_cents:available,month_income_cents:totals.income,month_expenses_cents:totals.expense,month_saving_cents:totals.saving,month_investment_cents:totals.investment,fuel_30d_liters:fuelLiters,fuel_30d_total_cents:fuelTotal,fuel_30d_average_milli:fuelAverageMilli,latest_expense_amount_cents:Number(latestExpense?.amount_cents||0),latest_expense_concept:String(latestExpense?.merchant||latestExpense?.concept||''),latest_expense_date:String(latestExpense?.occurred_on||''),scheduled,budgets,collaboration_notifications};
   }catch(error){return {error:error?.message||'sync_failed',retry:true};}
 };
+
+
+/* A2C 5.7 — sistema visual responsive */
+function a2c57InstallDesign(){
+  if(document.querySelector('#a2c57-design'))return;
+  const style=document.createElement('style');
+  style.id='a2c57-design';
+  style.textContent=`
+    *{box-sizing:border-box}
+    html,body{max-width:100%;overflow-x:hidden}
+    body{font-size:15px;line-height:1.42}
+    button,input,select,textarea{font:inherit;max-width:100%}
+    button{touch-action:manipulation}
+    .app-shell,.page,.content,.main-content{max-width:100%;overflow-x:hidden}
+    .modal{padding:max(12px,env(safe-area-inset-top)) 10px max(12px,env(safe-area-inset-bottom))}
+    .modal-card{width:min(100%,720px)!important;max-height:calc(100dvh - 24px)!important;overflow-y:auto!important;overscroll-behavior:contain;border-radius:22px!important}
+    .modal-card.wide{width:min(100%,820px)!important}
+    .modal-head{position:sticky;top:-1px;z-index:4;background:inherit;padding-top:2px}
+    .modal-head h2{font-size:clamp(20px,5.4vw,27px);line-height:1.15;margin:0}
+    .modal-head p{font-size:12px;margin:5px 0 0}
+    .close-btn{min-width:44px!important;width:44px!important;height:44px!important;flex:0 0 44px}
+    .field{min-width:0}.field label{font-size:11px;letter-spacing:.1em}
+    .field input,.field select,.field textarea{width:100%;min-height:50px;padding:12px 14px;border-radius:14px}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .actions>.btn{flex:1 1 140px;white-space:normal;min-height:44px}
+    .btn{min-height:40px;padding:9px 13px;line-height:1.15}
+    .row,.transaction-row,.a2c41-profile-option,.wa-conversation-row{min-width:0}
+    .row>div,.transaction-main,.transaction-tail,.wa-conversation-info{min-width:0}
+    .transaction-row{gap:9px;padding:11px 8px}
+    .transaction-title,.transaction-subtitle,.wa-conversation-info small{overflow:hidden;text-overflow:ellipsis}
+    .transaction-tail{max-width:44%;align-items:flex-end}
+    .transaction-tail>b{font-size:clamp(16px,4.4vw,21px);white-space:nowrap}
+    .tx-split-badge{max-width:100%;white-space:normal;text-align:right}
+    .bottom-nav{padding-bottom:max(7px,env(safe-area-inset-bottom));gap:2px}
+    .bottom-nav button,.bottom-nav .nav-item{min-width:0;padding:7px 3px}
+    .bottom-nav span,.bottom-nav small{font-size:9px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .bottom-nav svg{width:22px;height:22px}
+    .wa-chat-shell{height:calc(100dvh - 28px)!important;max-height:760px}
+    .wa-chat-header{position:sticky;top:0;z-index:3}
+    .wa-chat-body{padding:12px 9px!important}
+    .wa-bubble{max-width:88%!important;font-size:14px}
+    .wa-expense-card{align-items:flex-start!important;flex-wrap:wrap}
+    .wa-expense-card>div:first-child{min-width:190px}
+    .wa-expense-actions{margin-left:auto}
+    .wa-compose{padding-bottom:max(9px,env(safe-area-inset-bottom))!important}
+    .wa-compose textarea{font-size:16px}
+    .a2c55-split-item,.a2c54-main-split-row{flex-wrap:wrap}
+    .a2c55-split-actions,.a2c54-main-split-actions{width:100%;justify-content:flex-end}
+    .a2c55-split-actions .btn,.a2c54-main-split-actions .btn{flex:1;min-width:82px}
+    @media(max-width:520px){
+      .modal{align-items:flex-end;padding:0}
+      .modal-card,.modal-card.wide{width:100%!important;max-height:94dvh!important;border-radius:22px 22px 0 0!important;padding:18px 16px}
+      .form-grid,.grid-2,.split-mode-grid{grid-template-columns:1fr!important}
+      .dashboard-head{align-items:flex-start;gap:10px}
+      .dashboard-head h1{font-size:27px}
+      .metric{font-size:29px}
+      .a2c41-profile-option{padding:11px 10px}
+      .a2c41-profile-option strong{font-size:14px}
+      .a2c41-profile-option small{font-size:10px}
+    }
+  `;
+  document.head.appendChild(style);
+}
+a2c57InstallDesign();

@@ -41,6 +41,7 @@ async function a2c54DeleteSplit(splitId,transactionId=null,onDone=null){
 }
 
 function renderMessagesPage(){
+  setTimeout(()=>a2c42RefreshMessagesView?.(),80);
   const unread=a2c42.conversations.reduce((sum,row)=>sum+Number(row.unread_count||0),0);
   return `<section class="messages-page">
     <div class="dashboard-head">
@@ -109,13 +110,25 @@ function openA2C53Pay(splitId,onDone=null){
   </form>`);
   document.querySelector('#a2c53-pay-form').onsubmit=async event=>{
     event.preventDefault();const button=event.submitter,fd=new FormData(event.currentTarget);busy(button,true);
-    const {error}=await sb.rpc('a2c_pay_expense_split_v53',{
+    let {error}=await sb.rpc('a2c_pay_expense_split_v53',{
       p_split_id:splitId,
       p_resource_id:fd.get('resource_id')||null,
       p_payment_method:fd.get('payment_method')
     });
+    if(error&&/function|does not exist|schema cache/i.test(String(error.message||''))){
+      const fallback=await sb.rpc('a2c_pay_shared_expense_v52',{
+        p_split_id:splitId,
+        p_resource_id:fd.get('resource_id')||null,
+        p_payment_method:fd.get('payment_method')
+      });
+      error=fallback.error;
+    }
     busy(button,false);if(error)return toast(error.message,true);
-    closeModal();await refresh();toast('Pago realizado.');onDone?.();
+    closeModal();
+    await refresh();
+    await a2c42RefreshMessagesView?.();
+    toast('Pago realizado.');
+    onDone?.();
   };
 }
 
@@ -141,12 +154,37 @@ openA2C42Conversation=async function(conversationId,friendId){
   const friend=a2c42.friends.find(p=>String(p.id)===String(friendId))
     ||a2c42.conversations.find(c=>String(c.friend_id)===String(friendId))
     ||{};
-  const [messagesResult,splitsResult]=await Promise.all([
-    sb.rpc('a2c_list_messages_v42',{p_conversation_id:conversationId,p_limit:200}),
-    sb.rpc('a2c_list_conversation_splits_v55',{p_conversation_id:conversationId})
-  ]);
+  const messagesResult=await sb.rpc(
+    'a2c_list_messages_v42',
+    {p_conversation_id:conversationId,p_limit:200}
+  );
   if(messagesResult.error)return toast(messagesResult.error.message,true);
-  if(splitsResult.error)return toast(splitsResult.error.message,true);
+
+  let splitsResult=await sb.rpc(
+    'a2c_list_conversation_splits_v55',
+    {p_conversation_id:conversationId}
+  );
+  if(splitsResult.error){
+    const fallback=await sb.rpc(
+      'a2c_list_conversation_splits_v53',
+      {p_conversation_id:conversationId}
+    );
+    if(!fallback.error){
+      splitsResult={
+        data:(fallback.data||[]).map(row=>({
+          ...row,
+          version_number:1,
+          is_current:true,
+          version_status:row.split_status||'pending'
+        })),
+        error:null
+      };
+    }
+  }
+  if(splitsResult.error){
+    console.warn('No se pudieron cargar los repartos del chat:',splitsResult.error);
+    splitsResult={data:[],error:null};
+  }
   const messages=messagesResult.data||[],splits=splitsResult.data||[];
 
   modal(`<div class="wa-chat-shell">
@@ -157,7 +195,19 @@ openA2C42Conversation=async function(conversationId,friendId){
     </div>
     <div class="wa-chat-body" id="a2c42-message-list">
       ${messages.map(m=>`<article class="wa-bubble ${m.mine?'mine':'theirs'}"><p>${esc(m.body)}</p><small>${new Date(m.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</small></article>`).join('')}
-      ${splits.map(s=>{const inactive=!s.is_current||s.version_status==='superseded'||s.version_status==='cancelled';const label=s.version_status==='paid'?'Pagado':s.version_status==='superseded'?'Versión anterior':s.version_status==='cancelled'?'Eliminado':'Pendiente';return `<article class="wa-expense-card ${inactive?'inactive':''}"><div><small>GASTO COMPARTIDO · VERSIÓN ${s.version_number}</small><strong>${esc(s.concept)}</strong><span>Total ${money(s.transaction_amount_cents)} · Parte asignada ${money(s.split_amount_cents)}</span>${inactive?'<em>Esta versión ya no admite acciones.</em>':''}</div><div class="wa-expense-actions"><b class="${s.version_status==='paid'?'paid':inactive?'disabled':'pending'}">${label}</b>${s.mine_to_pay?`<button class="btn primary" data-wa-pay="${s.split_id}">Pagar</button>`:''}${s.mine_to_manage?`<button class="btn" data-wa-manage="${s.split_id}">Gestionar</button>`:''}</div></article>`;}).join('')}
+      ${splits.map(s=>`<article class="wa-expense-card ${s.is_current?'current':'historic'}">
+        <div>
+          <small>${s.is_current?'GASTO COMPARTIDO':'HISTORIAL DEL REPARTO'}</small>
+          <strong>${esc(s.concept)}</strong>
+          <span>Total ${money(s.transaction_amount_cents)} · Parte ${money(s.split_amount_cents)}</span>
+          <em>${esc(s.version_label||'')}</em>
+        </div>
+        <div class="wa-expense-actions">
+          <b class="${s.split_status==='paid'?'paid':s.is_current?'pending':'disabled'}">${s.split_status==='paid'?'Pagado':s.is_current?'Pendiente':'Sin vigencia'}</b>
+          ${s.is_current&&s.mine_to_pay?`<button class="btn primary" data-wa-pay="${s.split_id}">Pagar</button>`:''}
+          ${s.is_current&&s.mine_to_manage?`<button class="btn" data-wa-manage="${s.split_id}">Gestionar</button>`:''}
+        </div>
+      </article>`).join('')}
     </div>
     <form class="wa-compose" id="a2c42-compose">
       <textarea name="body" maxlength="4000" required placeholder="Mensaje"></textarea>
@@ -169,7 +219,7 @@ openA2C42Conversation=async function(conversationId,friendId){
       .wa-back{border:0;background:transparent;font-size:34px;line-height:1}.wa-chat-body{flex:1;overflow:auto;padding:14px 12px;display:flex;flex-direction:column;gap:7px;background-color:#efeae2;background-image:radial-gradient(#d9d2c9 0.7px,transparent 0.7px);background-size:18px 18px}
       .wa-bubble{max-width:82%;padding:8px 10px 6px;border-radius:9px;box-shadow:0 1px 1px rgba(0,0,0,.08)}.wa-bubble p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.wa-bubble small{display:block;text-align:right;font-size:9px;color:#777;margin-top:3px}
       .wa-bubble.mine{align-self:flex-end;background:#dcf8c6;border-top-right-radius:2px}.wa-bubble.theirs{align-self:flex-start;background:#fff;border-top-left-radius:2px}
-      .wa-expense-card{display:flex;align-items:center;gap:10px;background:#fff;padding:11px;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.1)}.wa-expense-card>div:first-child{flex:1}.wa-expense-card small,.wa-expense-card strong,.wa-expense-card span{display:block}.wa-expense-card small{font-size:9px;color:#7557ff}.wa-expense-card span{font-size:11px;color:#666;margin-top:3px}.wa-expense-actions{text-align:right}.wa-expense-actions b{display:block;font-size:10px}.wa-expense-actions b.pending{color:#d9851f}.wa-expense-actions b.paid{color:#16835c}.wa-expense-actions b.disabled{color:#8c8791}.wa-expense-actions .btn{padding:6px 9px;margin-top:5px}.wa-expense-card.inactive{opacity:.62;background:#f3f1f4}.wa-expense-card em{display:block;font-size:10px;color:#8b8490;font-style:normal;margin-top:5px}
+      .wa-expense-card{display:flex;align-items:center;gap:10px;background:#fff;padding:11px;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.1)}.wa-expense-card>div:first-child{flex:1}.wa-expense-card small,.wa-expense-card strong,.wa-expense-card span,.wa-expense-card em{display:block}.wa-expense-card em{font-size:10px;font-style:normal;color:#9b8fa1;margin-top:4px}.wa-expense-card.historic{opacity:.62;background:#f4f1f3}.wa-expense-card.historic .btn{display:none}.wa-expense-card small{font-size:9px;color:#7557ff}.wa-expense-card span{font-size:11px;color:#666;margin-top:3px}.wa-expense-actions{text-align:right}.wa-expense-actions b{display:block;font-size:10px}.wa-expense-actions b.pending{color:#d9851f}.wa-expense-actions b.paid{color:#16835c}.wa-expense-actions b.disabled{color:#888}.wa-expense-actions .btn{padding:6px 9px;margin-top:5px}
       .wa-compose{display:flex;align-items:flex-end;gap:7px;padding:9px;background:#f0f2f5}.wa-compose textarea{flex:1;min-height:42px;max-height:110px;border:0;border-radius:22px;padding:11px 15px;resize:none;background:#fff}.wa-send{width:44px;height:44px;border:0;border-radius:50%;background:#7557ff;color:#fff;font-size:18px}
     </style>
   </div>`,true);
@@ -183,6 +233,8 @@ openA2C42Conversation=async function(conversationId,friendId){
   document.querySelector('#a2c42-compose').onsubmit=async event=>{
     event.preventDefault();const button=event.submitter,body=String(new FormData(event.currentTarget).get('body')||'').trim();if(!body)return;
     busy(button,true);const {error}=await sb.rpc('a2c_send_message_v42',{p_friend_id:friendId,p_body:body});busy(button,false);
-    if(error)return toast(error.message,true);openA2C42Conversation(conversationId,friendId);
+    if(error)return toast(error.message,true);
+    await a2c42LoadConversations();
+    openA2C42Conversation(conversationId,friendId);
   };
 };

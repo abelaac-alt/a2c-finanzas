@@ -2,7 +2,7 @@
    A2C Finanzas 4.2
    Amigos y mensajes cifrados
    ========================== */
-const a2c42={friends:[],conversations:[],activeConversation:null,realtime:null};
+const a2c42={friends:[],conversations:[],activeConversation:null,realtime:null,realtimeUserId:null,loading:false};
 
 async function a2c42LoadFriends(){
   const {data,error}=await sb.rpc('a2c_list_friends_v42');
@@ -11,9 +11,12 @@ async function a2c42LoadFriends(){
   return a2c42.friends;
 }
 async function a2c42LoadConversations(){
+  if(!state.user)return [];
   const {data,error}=await sb.rpc('a2c_list_conversations_v42');
   if(error)throw error;
-  a2c42.conversations=data||[];
+  a2c42.conversations=(data||[]).sort((a,b)=>
+    String(b.last_message_at||'').localeCompare(String(a.last_message_at||''))
+  );
   return a2c42.conversations;
 }
 function a2c42PersonAvatar(profile){
@@ -108,22 +111,56 @@ async function openInvite(r){
   document.querySelectorAll('[data-invite-friend]').forEach(b=>b.onclick=async()=>{busy(b,true);const{data,error}=await sb.rpc('a2c_invite_resource_friend_v42',{p_resource_id:r.id,p_friend_id:b.dataset.inviteFriend});busy(b,false);if(error)return toast(error.message,true);closeModal();await refresh();toast(data==='already_member'?'Ya forma parte del elemento.':data==='already_pending'?'Ya tiene una invitación pendiente.':'Invitación enviada.');});
 }
 
-function a2c42StartRealtime(){
-  if(!state.user||a2c42.realtime)return;
-  a2c42.realtime=sb.channel(`a2c42-notifications-${state.user.id}`)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:`user_id=eq.${state.user.id}`},payload=>{
-      const row=payload.new||{};
-      if(row.type==='direct_message'){
-        if(window.A2CNative?.showMessageNotification)window.A2CNative.showMessageNotification(String(row.title||'Nuevo mensaje'),String(row.message||'Tienes un mensaje nuevo.'),String(row.related_id||''));
-        toast(row.message||'Tienes un mensaje nuevo.');
-        a2c42LoadConversations().catch(()=>{});
-      }else if(row.type==='friend_request'){
-        if(window.A2CNative?.showMessageNotification)window.A2CNative.showMessageNotification('Solicitud de amistad',String(row.message||'Tienes una nueva solicitud.'),'friends');
-        toast('Tienes una nueva solicitud de amistad.');
-      }
-    }).subscribe();
+async function a2c42RefreshMessagesView(){
+  if(a2c42.loading||!state.user)return;
+  a2c42.loading=true;
+  try{
+    await Promise.all([a2c42LoadFriends(),a2c42LoadConversations()]);
+    if(state.tab==='messages'){
+      renderShell();
+    }
+  }catch(error){
+    console.warn('No se pudieron actualizar las conversaciones:',error);
+  }finally{
+    a2c42.loading=false;
+  }
 }
-setTimeout(a2c42StartRealtime,2200);
+
+function a2c42StartRealtime(){
+  if(!state.user)return;
+  if(a2c42.realtime&&a2c42.realtimeUserId===state.user.id)return;
+  if(a2c42.realtime){
+    sb.removeChannel(a2c42.realtime).catch(()=>{});
+    a2c42.realtime=null;
+  }
+  a2c42.realtimeUserId=state.user.id;
+  a2c42.realtime=sb.channel(`a2c42-user-${state.user.id}`)
+    .on('postgres_changes',{
+      event:'INSERT',
+      schema:'public',
+      table:'notifications',
+      filter:`user_id=eq.${state.user.id}`
+    },payload=>{
+      const row=payload.new||{};
+      if(row.type==='direct_message'||row.type==='friend_request'||/expense|split|shared/i.test(String(row.type||''))){
+        a2c42RefreshMessagesView();
+        if(row.type==='direct_message'){
+          window.A2CNative?.showMessageNotification?.(
+            String(row.title||'Nuevo mensaje'),
+            String(row.message||'Tienes un mensaje nuevo.'),
+            String(row.related_id||'')
+          );
+        }
+      }
+    })
+    .on('postgres_changes',{
+      event:'INSERT',
+      schema:'public',
+      table:'direct_messages'
+    },()=>a2c42RefreshMessagesView())
+    .subscribe();
+}
+
 
 const a2c42OldNotificationDestination=openNotificationDestination;
 openNotificationDestination=async function(notification){
