@@ -19,7 +19,7 @@ function openA2C54EditSplit(splitId,transactionId=null,onDone=null){
     event.preventDefault();const button=event.submitter,amount=cents(new FormData(event.currentTarget).get('amount'));
     busy(button,true);const {error}=await sb.rpc('a2c_update_expense_split_v53',{p_split_id:splitId,p_amount_cents:amount});busy(button,false);
     if(error)return toast(error.message,true);
-    closeModal();await refresh();toast('Importe actualizado.');
+    closeModal();await refresh();await a2c42RefreshMessagesView?.();toast('Importe actualizado.');
     if(onDone)onDone();else if(transactionId){const tx=state.transactions.find(row=>row.id===transactionId);if(tx)openTransaction(tx);}
   };
 }
@@ -29,14 +29,14 @@ async function a2c54SettleSplit(splitId,transactionId=null,onDone=null){
   if(!confirm(`¿Confirmas que quieres liquidar manualmente ${money(split.amount_cents)}? Se aumentará tu balance, pero no se descontará del saldo del amigo.`))return;
   const {error}=await sb.rpc('a2c_mark_expense_split_paid_v53',{p_split_id:splitId,p_payment_method:'cash'});
   if(error)return toast(error.message,true);
-  closeModal();await refresh();toast('Reparto liquidado manualmente.');
+  closeModal();await refresh();await a2c42RefreshMessagesView?.();toast('Reparto liquidado manualmente.');
   if(onDone)onDone();else if(transactionId){const tx=state.transactions.find(row=>row.id===transactionId);if(tx)openTransaction(tx);}
 }
 async function a2c54DeleteSplit(splitId,transactionId=null,onDone=null){
   if(!confirm('¿Eliminar este reparto compartido? El amigo dejará de tenerlo pendiente.'))return;
   const {error}=await sb.rpc('a2c_delete_expense_split_v54',{p_split_id:splitId});
   if(error)return toast(error.message,true);
-  closeModal();await refresh();toast('Reparto eliminado.');
+  closeModal();await refresh();await a2c42RefreshMessagesView?.();toast('Reparto eliminado.');
   if(onDone)onDone();else if(transactionId){const tx=state.transactions.find(row=>row.id===transactionId);if(tx)openTransaction(tx);}
 }
 
