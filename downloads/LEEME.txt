@@ -1,6 +1,0 @@
-Coloca aquí la APK publicada con el nombre exacto:
-
-A2C-Finanzas.apk
-
-Ruta web resultante:
-./downloads/A2C-Finanzas.apk
