@@ -1,11 +1,11 @@
 const CACHE='a2c-v7-1';
 const APP_ASSETS=[
-  './','./index.html','./styles.css?v=70','./logo-a2c.png','./icon-192.png','./icon-512.png',
+  './','./index.html','./styles.css?v=7020','./logo-a2c.png','./icon-192.png','./icon-512.png',
   './config.js','./manifest.webmanifest',
-  './src/core.js?v=70','./src/store.js?v=70','./src/ui.js?v=70','./src/auth.js?v=70',
-  './src/dashboard.js?v=70','./src/transactions.js?v=70','./src/resources.js?v=70',
-  './src/budgets.js?v=70','./src/messages.js?v=70','./src/profile.js?v=70',
-  './src/native.js?v=70','./src/app.js?v=70'
+  './src/core.js?v=7020','./src/store.js?v=7020','./src/ui.js?v=7020','./src/auth.js?v=7020',
+  './src/dashboard.js?v=7020','./src/transactions.js?v=7020','./src/resources.js?v=7020',
+  './src/budgets.js?v=7020','./src/messages.js?v=7020','./src/profile.js?v=7020',
+  './src/native.js?v=7020','./src/app.js?v=7020'
 ];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(APP_ASSETS)).then(()=>self.skipWaiting()));

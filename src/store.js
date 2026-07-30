@@ -37,7 +37,11 @@
         (await A.sb.auth.getSession()).data.session?.refresh_token||'',
         userId
       );
-      A.sb.rpc('a2c_v7_touch_last_seen',{p_device:A.platform}).catch(()=>{});
+      try{
+        await A.sb.rpc('a2c_v7_touch_last_seen',{p_device:A.platform});
+      }catch(error){
+        console.warn('No se pudo actualizar la última actividad:',error);
+      }
     },
     profileById(id){return A.state.profiles.find(row=>String(row.id)===String(id))||null;},
     resourceById(id){return A.state.resources.find(row=>String(row.id)===String(id))||null;},
