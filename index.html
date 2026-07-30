@@ -1,56 +1,45 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#f5f4f0">
-  <meta name="color-scheme" content="light">
-  <meta name="description" content="A2C Finanzas: finanzas personales y compartidas.">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="A2C Finanzas">
-  <title>A2C Finanzas</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500;600&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=56">
-  <link rel="stylesheet" href="./invite-registration.css?v=56">
-  <link rel="stylesheet" href="./resource-money.css?v=56">
-  <link rel="stylesheet" href="./privacy-friends.css?v=56">
-  <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" href="./icon-192.png" type="image/png">
-  <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./groups-v54.css?v=59">
-  <link rel="stylesheet" href="modern-theme-v59.css?v=61">
-  <link rel="stylesheet" href="scheduled-v63.css?v=63">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A2C Finanzas</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <noscript><div class="noscript">A2C Finanzas necesita JavaScript para funcionar.</div></noscript>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <main id="app"><section class="boot"><span class="spinner"></span><p>Cargando A2C Finanzas…</p></section></main>
-  <script src="./config.js?v=56"></script>
-  <script type="module" src="./privacy-friends.js?v=56"></script>
-<script src="./bootstrap.js?v=50"></script>
-  <script type="module" src="./invite-registration.js?v=56"></script>
-  <script type="module" src="./resource-money.js?v=61.1"></script>
-  <script type="module" src="./groups-v54.js?v=42"></script>
+    <div class="app-container">
+        <header class="header-principal">
+            <h1>Control Financiero</h1>
+        </header>
 
-<script>
-(async()=>{
-  try{
-    if('serviceWorker' in navigator){
-      const registrations=await navigator.serviceWorker.getRegistrations();
-      await Promise.all(registrations.map(registration=>registration.unregister()));
-    }
-    if('caches' in window){
-      const keys=await caches.keys();
-      await Promise.all(keys.map(key=>caches.delete(key)));
-    }
-  }catch(error){
-    console.warn('No se pudo limpiar la caché anterior.',error);
-  }
-})();
-</script>
+        <main class="content">
+            <!-- Tarjeta Principal de Balance -->
+            <section class="card-financiera balance-card">
+                <h2>Balance Total</h2>
+                <div class="balance-monto" id="total-balance">€ 0.00</div>
+            </section>
 
+            <!-- Tarjeta de Últimos Movimientos -->
+            <section class="card-financiera">
+                <h2>Últimos Movimientos</h2>
+                <ul class="lista-movimientos" id="movimientos-list">
+                    <!-- Los elementos se insertarán vía JS -->
+                </ul>
+            </section>
+        </main>
+
+        <!-- Menú inferior fijo (estilo red social) -->
+        <nav class="bottom-nav">
+            <button class="nav-item active"><span class="icon">🏠</span>Inicio</button>
+            <button class="nav-item"><span class="icon">📊</span>Gastos</button>
+            <button class="nav-item action-btn"><span class="icon">+</span></button>
+            <button class="nav-item"><span class="icon">👥</span>Amigos</button>
+            <button class="nav-item"><span class="icon">⚙️</span>Ajustes</button>
+        </nav>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="app.bundle.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
