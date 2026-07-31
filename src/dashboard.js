@@ -1,50 +1,58 @@
 (function(){
   'use strict';
   const A=window.A2C;
-  A.dashboard={
-    render(){
-      const totals=A.monthTotals();const balance=A.balance();const owed=A.pendingOwed();const receivable=A.pendingReceivable();
-      const values=[
-        {key:'income',label:'Ingresos',value:totals.income,color:'#12845f'},
-        {key:'expense',label:'Gastos',value:totals.expense,color:'#c33d49'},
-        {key:'saving',label:'Ahorro',value:totals.saving,color:'#2d63c8'},
-        {key:'investment',label:'Inversión',value:totals.investment,color:'#7a4cb7'}
-      ];
-      if(owed>0)values.push({key:'owed',label:'Debes',value:owed,color:'#b66d0d'});
-      const chartTotal=values.reduce((sum,row)=>sum+row.value,0)||1;let cursor=0;
-      const segments=values.map(row=>{const start=cursor;cursor+=row.value/chartTotal*100;return `${row.color} ${start}% ${cursor}%`;}).join(',');
-      const latest=A.state.transactions.filter(row=>row.kind==='expense').slice(0,5);
-      const scheduled=A.state.scheduled.filter(row=>row.active).slice(0,3);
-      const currentBudgets=A.state.budgets.filter(row=>row.active&&row.period_month===A.monthKey()).slice(0,3);
-      return `${A.ui.header('Resumen','Tu centro financiero','Todo lo importante de este mes')}
-        <section class="card balance-card">
-          <small>Saldo disponible</small><div class="big-number">${A.money(balance)}</div>
-          <div class="balance-actions"><button class="btn" id="dashboard-add">＋ Movimiento</button><button class="btn" id="dashboard-fuel">⛽ Combustible</button><button class="btn" data-nav="activity">Ver actividad</button></div>
-        </section>
-        <section class="card" style="margin-top:12px"><div class="metrics">
-          <div class="metric-card income"><small>INGRESOS</small><b>${A.money(totals.income)}</b></div>
-          <div class="metric-card expense"><small>GASTOS</small><b>${A.money(totals.expense)}</b></div>
-          <div class="metric-card saving"><small>AHORRO</small><b>${A.money(totals.saving)}</b></div>
-          <div class="metric-card investment"><small>INVERSIÓN</small><b>${A.money(totals.investment)}</b></div>
-        </div>${owed||receivable?`<div class="metrics" style="margin-top:8px">${owed?`<div class="metric-card expense"><small>DEBES</small><b>${A.money(owed)}</b></div>`:''}${receivable?`<div class="metric-card income"><small>TE DEBEN</small><b>${A.money(receivable)}</b></div>`:''}</div>`:''}</section>
-        <section class="grid grid-2" style="margin-top:12px">
-          <article class="card"><div class="card-title"><div><h2>Distribución mensual</h2><p>Ingresos, gastos y planificación</p></div></div><div class="chart-wrap"><div class="donut" style="background:conic-gradient(${segments})"><div class="donut-center"><div><b>${A.money(totals.expense)}</b><small>gastado</small></div></div></div><div class="legend">${values.map(row=>`<div class="legend-row"><i style="background:${row.color}"></i><span>${row.label}</span><b>${A.money(row.value)}</b></div>`).join('')}</div></div></article>
-          <article class="card"><div class="card-title"><div><h2>Próximos movimientos</h2><p>Programaciones activas</p></div><button class="btn small" id="dashboard-scheduled">Gestionar</button></div>${scheduled.length?`<div class="list">${scheduled.map(row=>`<div class="list-row"><span class="kind-icon expense">↻</span><div class="list-row-main"><strong>${A.escape(row.concept)}</strong><small>${A.escape(row.next_run||'')} · ${A.escape(row.frequency||'Mensual')}</small></div><div class="list-row-value"><b>${A.money(row.amount_cents)}</b></div></div>`).join('')}</div>`:A.ui.empty('No hay movimientos programados.')}</article>
-        </section>
-        <section class="grid grid-2" style="margin-top:12px">
-          <article class="card"><div class="card-title"><div><h2>Últimos gastos</h2><p>Movimientos recientes</p></div><button class="btn small" data-nav="activity">Todos</button></div>${latest.length?`<div class="list">${latest.map(A.transactions.rowMarkup).join('')}</div>`:A.ui.empty('Todavía no hay gastos.')}</article>
-          <article class="card"><div class="card-title"><div><h2>Presupuestos activos</h2><p>Límites del mes</p></div><button class="btn small" id="dashboard-budgets">Gestionar</button></div>${currentBudgets.length?currentBudgets.map(A.budgets.rowMarkup).join(''):A.ui.empty('No hay presupuestos para este mes.')}</article>
-        </section>`;
-    },
-    bind(){
-      if(A.state.page!=='home')return;
-      A.root.querySelectorAll('[data-nav]').forEach(button=>button.addEventListener('click',()=>A.navigate(button.dataset.nav)));
-      A.root.querySelector('#dashboard-add')?.addEventListener('click',()=>A.transactions.openForm());
-      A.root.querySelector('#dashboard-fuel')?.addEventListener('click',()=>A.transactions.openFuelForm());
-      A.root.querySelector('#dashboard-scheduled')?.addEventListener('click',()=>{A.state.page='tools';A.state.tool='scheduled';A.ui.render();});
-      A.root.querySelector('#dashboard-budgets')?.addEventListener('click',()=>{A.state.page='tools';A.state.tool='budgets';A.ui.render();});
-      A.root.querySelectorAll('[data-transaction]').forEach(row=>row.addEventListener('click',()=>A.transactions.openDetail(row.dataset.transaction)));
-    }
+  const D=A.dashboard={selectedKind:'expense'};
+  D.chartValues=()=>{const totals=A.monthTotals();return [
+    {key:'income',label:'Ingresos',value:totals.income,color:'#0A5BFF',icon:'income'},
+    {key:'expense',label:'Gastos',value:totals.expense,color:'#101828',icon:'expense'},
+    {key:'saving',label:'Ahorro',value:totals.saving,color:'#4B83FF',icon:'saving'},
+    {key:'investment',label:'Inversión',value:totals.investment,color:'#A9C4FF',icon:'investment'}
+  ];};
+  D.chartMarkup=()=>{
+    const values=D.chartValues();const donut=A.donutSegments(values);let selected=values.find(row=>row.key===D.selectedKind)||values[1];
+    if(selected.value===0){selected=values.find(row=>row.value>0)||selected;D.selectedKind=selected.key;}
+    const paths=donut.segments.length?donut.segments.map(row=>`<path d="${row.path}" fill="none" stroke="${row.color}" stroke-width="12" class="donut-segment ${row.key===D.selectedKind?'active':''}" data-action="dashboard-chart-select" data-kind="${row.key}" tabindex="0"><title>${row.label}: ${A.money(row.value)}</title></path>`).join(''):`<circle cx="50" cy="50" r="42" fill="none" stroke="#E8EDF5" stroke-width="12"/>`;
+    return `${A.ui.sectionTitle('Distribución del mes','Pulsa una sección para consultar su importe')}
+      <div class="finance-chart-layout">
+        <div class="interactive-donut">
+          <svg viewBox="0 0 100 100" role="img" aria-label="Distribución financiera mensual">${paths}</svg>
+          <div class="donut-data"><span>${A.icon(selected.icon,22)}</span><small>${selected.label}</small><strong>${A.money(selected.value)}</strong></div>
+        </div>
+        <div class="chart-legend">${values.map(row=>`<button class="chart-legend-row ${row.key===D.selectedKind?'active':''}" data-action="dashboard-chart-select" data-kind="${row.key}"><i style="--segment:${row.color}"></i><span>${A.icon(row.icon,18)}<b>${row.label}</b></span><strong>${A.money(row.value)}</strong></button>`).join('')}</div>
+      </div>`;
   };
-  A.ui.registerPage('home',A.dashboard.render);
+  D.render=()=>{
+    const balance=A.balance();const owed=A.pendingOwed();const receivable=A.pendingReceivable();
+    const latest=A.timeline().slice(0,10);const scheduled=A.pendingScheduled().slice(0,8);
+    const budgets=A.state.budgets.filter(row=>row.active&&row.period_month===A.monthKey()).slice(0,5);
+    return `<section class="home-balance">
+        <div class="balance-heading"><span>${A.icon('wallet',24)}</span><small>Saldo disponible</small></div>
+        <strong>${A.money(balance)}</strong>
+        <div class="home-quick-actions">
+          <button data-action="new-transaction">${A.icon('plus',18)}<span>Movimiento</span></button>
+          <button data-action="new-fuel">${A.icon('fuel',18)}<span>Combustible</span></button>
+          <button data-nav="activity">${A.icon('activity',18)}<span>Actividad</span></button>
+        </div>
+        ${(owed||receivable)?`<div class="balance-debts">${owed?`<span>${A.icon('expense',16)}Debes <b>${A.money(owed)}</b></span>`:''}${receivable?`<span>${A.icon('income',16)}Te deben <b>${A.money(receivable)}</b></span>`:''}</div>`:''}
+      </section>
+      <section class="card dashboard-chart" id="dashboard-chart-card">${D.chartMarkup()}</section>
+      <section class="card dashboard-section">
+        ${A.ui.sectionTitle('Últimos movimientos','Los 10 movimientos más recientes','<button class="text-button" data-nav="activity">Ver todos</button>')}
+        ${latest.length?`<div class="movement-list">${latest.map(A.transactions.rowMarkup).join('')}</div>`:A.ui.empty('Aún no hay movimientos','Registra tu primer movimiento desde el botón superior.')}
+      </section>
+      <section class="card dashboard-section">
+        ${A.ui.sectionTitle('Movimientos pendientes','Gastos y traspasos programados','<button class="btn small primary" data-action="new-scheduled">'+A.icon('plus',16)+' Programar</button>')}
+        ${scheduled.length?`<div class="scheduled-list">${scheduled.map(A.scheduled.rowMarkup).join('')}</div>`:A.ui.empty('No hay movimientos pendientes','Puedes programar un gasto o un traspaso entre huchas.')}
+      </section>
+      <section class="card dashboard-section">
+        ${A.ui.sectionTitle('Presupuestos activos','Seguimiento del mes actual','<button class="text-button" data-action="open-tool" data-tool="budgets">Gestionar</button>')}
+        ${budgets.length?`<div class="budget-list">${budgets.map(A.budgets.rowMarkup).join('')}</div>`:A.ui.empty('No hay presupuestos activos','Crea límites por categoría para controlar el gasto.')}
+      </section>`;
+  };
+  A.ui.action('dashboard-chart-select',({data})=>{D.selectedKind=data.kind;const card=document.querySelector('#dashboard-chart-card');if(card)card.innerHTML=D.chartMarkup();});
+  A.ui.action('new-transaction',()=>A.transactions.openForm());
+  A.ui.action('new-fuel',()=>A.transactions.openForm(null,{fuel:true,kind:'expense',concept:'Combustible'}));
+  A.ui.action('new-scheduled',()=>A.scheduled.openForm());
+  A.ui.action('open-tool',({data})=>{A.state.page='tools';A.state.tool=data.tool||'statistics';history.replaceState(null,'','#tools');A.ui.render();});
+  A.ui.registerPage('home',D.render);
 })();
