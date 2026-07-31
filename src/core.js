@@ -1,7 +1,7 @@
 (function(){
   'use strict';
   const A=window.A2C=window.A2C||{};
-  A.VERSION='8.0.0';
+  A.VERSION='8.1.0';
   A.platform=window.A2CNative?'android':'web';
   A.config=window.A2C_CONFIG||{};
   A.root=document.querySelector('#app');
@@ -9,7 +9,7 @@
   A.toastRoot=document.querySelector('#toast');
   A.state={
     user:null,profile:null,page:'home',tool:'statistics',loading:false,lastLoadedAt:0,
-    resources:[],transactions:[],transfers:[],budgets:[],scheduled:[],friends:[],friendships:[],
+    resources:[],transactions:[],transfers:[],budgets:[],budgetRules:[],scheduled:[],goals:[],friends:[],friendships:[],
     conversations:[],notifications:[],shares:[],profiles:[],filters:{query:'',kind:''}
   };
 
@@ -148,7 +148,8 @@
     return session;
   };
 
-  A.balance=()=>A.state.transactions.reduce((sum,row)=>sum+(row.kind==='income'?Number(row.amount_cents):-Number(row.amount_cents)),0);
+  A.goalOwnBalance=()=>A.state.goals.reduce((sum,row)=>sum+Number(row.own_balance_cents||0),0);
+  A.balance=()=>A.state.transactions.reduce((sum,row)=>sum+(row.kind==='income'?Number(row.amount_cents):-Number(row.amount_cents)),0)-A.goalOwnBalance();
   A.resourceBalance=id=>{
     const transactionTotal=A.state.transactions
       .filter(row=>String(row.resource_id||'')===String(id))
@@ -161,7 +162,7 @@
     return transactionTotal+transferTotal;
   };
   A.currentMonthTransactions=()=>A.state.transactions.filter(row=>String(row.occurred_on||'').slice(0,7)===A.monthKey());
-  A.monthTotals=()=>A.currentMonthTransactions().reduce((totals,row)=>{totals[row.kind]=(totals[row.kind]||0)+Number(row.amount_cents||0);return totals;},{income:0,expense:0,saving:0,investment:0});
+  A.monthTotals=()=>{const totals=A.currentMonthTransactions().reduce((result,row)=>{result[row.kind]=(result[row.kind]||0)+Number(row.amount_cents||0);return result;},{income:0,expense:0,saving:0,investment:0});totals.saving+=A.state.goals.reduce((sum,row)=>sum+Number(row.month_contributed_cents||0)-Number(row.month_withdrawn_cents||0),0);return totals;};
   A.pendingOwed=()=>A.state.shares.filter(row=>row.participant_user_id===A.state.user?.id&&row.status==='pending').reduce((sum,row)=>sum+Number(row.amount_cents||0),0);
   A.pendingReceivable=()=>A.state.shares.filter(row=>row.owner_id===A.state.user?.id&&row.status==='pending').reduce((sum,row)=>sum+Number(row.amount_cents||0),0);
   A.timeline=()=>{
