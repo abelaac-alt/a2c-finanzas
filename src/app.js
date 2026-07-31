@@ -10,7 +10,7 @@
       }
       window.__A2C_BOOT_STATUS='ready';window.dispatchEvent(new CustomEvent('a2c:ready'));
       if(A.platform==='web'&&'serviceWorker' in navigator){
-        navigator.serviceWorker.register('./sw.js?v=800').catch(error=>console.warn('Service worker no disponible:',error));
+        navigator.serviceWorker.register('./sw.js?v=820').catch(error=>console.warn('Service worker no disponible:',error));
       }
       const destination=new URLSearchParams(location.search).get('destination');if(destination&&window.a2cAndroidOpenDestination)window.a2cAndroidOpenDestination(destination);
       document.addEventListener('visibilitychange',async()=>{

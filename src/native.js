@@ -12,6 +12,6 @@
   }
   window.a2cAndroidRegisterPayment=registerPayment;
   window.a2cAndroidRegisterFuel=payment=>registerPayment({...payment,merchant:payment?.merchant||payment?.concept||'Combustible',concept:payment?.concept||'Combustible'});
-  window.a2cAndroidGetNativeData=async()=>{try{await authenticated();return await A.rpc('a2c_widget_snapshot_v81',{p_goal_ids:null});}catch(error){return {error:'not_authenticated',message:error.message};}};
+  window.a2cAndroidGetNativeData=async()=>{try{await authenticated();return await A.rpc('a2c_widget_snapshot_v82',{p_goal_ids:null});}catch(error){return {error:'not_authenticated',message:error.message};}};
   window.a2cAndroidOpenDestination=destination=>{const map={home:'home',activity:'activity',messages:'messages',profile:'profile',tools:'tools',statistics:'tools',goals:'tools','pending-payments':'activity'};if(destination==='statistics')A.state.tool='statistics';if(destination==='goals')A.state.tool='goals';A.navigate(map[destination]||'home');};
 })();
