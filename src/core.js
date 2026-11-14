@@ -93,7 +93,7 @@
     other:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h4"/>'
   };
   A.icon=(name,size=22,className='')=>`<svg class="app-icon ${A.escape(className)}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name]||iconPaths.other}</svg>`;
-  A.brandMark=(size=42)=>`<span class="brand-mark" style="--brand-size:${size}px">${A.icon('wallet',Math.round(size*.62))}</span>`;
+  A.brandMark=(size=42)=>`<span class="brand-mark" style="--brand-size:${size}px" aria-hidden="true">A2C</span>`;
 
   A.categoryDefinitions={
     food:{name:'Alimentación',icon:'food',keywords:['mercadona','lidl','aldi','carrefour','supermercado','alimentación','comida']},

@@ -4,7 +4,7 @@
   A.auth={
     render(){
       A.root.innerHTML=`<section class="auth-page"><form class="auth-card" id="login-form">
-        <div class="auth-brand">${A.brandMark(68)}<div><h1>A2C Finanzas</h1><p>Control financiero profesional</p></div></div>
+        <div class="auth-brand">${A.brandMark(68)}<div><h1>A2C Finanzas</h1><p>Inicia sesión para continuar</p></div></div>
         <div class="field"><label>Email o @usuario</label><input name="identifier" autocomplete="username" required placeholder="correo@ejemplo.com o @usuario"></div>
         <div class="field"><label>Contraseña</label><input name="password" type="password" autocomplete="current-password" minlength="6" required></div>
         <label class="check-row"><input name="remember" type="checkbox"><span><b>Recordar acceso</b><small>Mantiene la sesión en este dispositivo.</small></span></label>

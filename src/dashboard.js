@@ -3,15 +3,15 @@
   const A=window.A2C;
   const D=A.dashboard={selectedKind:'expense'};
   D.chartValues=()=>{const totals=A.monthTotals();return [
-    {key:'income',label:'Ingresos',value:totals.income,color:'#0A5BFF',icon:'income'},
-    {key:'expense',label:'Gastos',value:totals.expense,color:'#101828',icon:'expense'},
-    {key:'saving',label:'Ahorro',value:totals.saving,color:'#4B83FF',icon:'saving'},
-    {key:'investment',label:'Inversión',value:totals.investment,color:'#A9C4FF',icon:'investment'}
+    {key:'income',label:'Ingresos',value:totals.income,color:'#1E7050',icon:'income'},
+    {key:'expense',label:'Gastos',value:totals.expense,color:'#15181C',icon:'expense'},
+    {key:'saving',label:'Ahorro',value:totals.saving,color:'#4C6C96',icon:'saving'},
+    {key:'investment',label:'Inversión',value:totals.investment,color:'#9E7428',icon:'investment'}
   ];};
   D.chartMarkup=()=>{
     const values=D.chartValues();const donut=A.donutSegments(values);let selected=values.find(row=>row.key===D.selectedKind)||values[1];
     if(selected.value===0){selected=values.find(row=>row.value>0)||selected;D.selectedKind=selected.key;}
-    const paths=donut.segments.length?donut.segments.map(row=>`<path d="${row.path}" fill="none" stroke="${row.color}" stroke-width="12" class="donut-segment ${row.key===D.selectedKind?'active':''}" data-action="dashboard-chart-select" data-kind="${row.key}" tabindex="0"><title>${row.label}: ${A.money(row.value)}</title></path>`).join(''):`<circle cx="50" cy="50" r="42" fill="none" stroke="#E8EDF5" stroke-width="12"/>`;
+    const paths=donut.segments.length?donut.segments.map(row=>`<path d="${row.path}" fill="none" stroke="${row.color}" stroke-width="12" class="donut-segment ${row.key===D.selectedKind?'active':''}" data-action="dashboard-chart-select" data-kind="${row.key}" tabindex="0"><title>${row.label}: ${A.money(row.value)}</title></path>`).join(''):`<circle cx="50" cy="50" r="42" fill="none" stroke="#EFEEEA" stroke-width="12"/>`;
     return `${A.ui.sectionTitle('Distribución del mes','Pulsa una sección para consultar su importe')}
       <div class="finance-chart-layout">
         <div class="interactive-donut">
