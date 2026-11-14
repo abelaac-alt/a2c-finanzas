@@ -35,6 +35,7 @@
         </div>
         <div class="balance-reserves"><span>${A.icon('saving',16)}Ahorro en huchas <b>${A.money(savingPiggies)}</b></span><span>${A.icon('piggy',16)}Liquidez en huchas <b>${A.money(liquidityPiggies)}</b></span></div>${(owed||receivable)?`<div class="balance-debts">${owed?`<span>${A.icon('expense',16)}Debes <b>${A.money(owed)}</b></span>`:''}${receivable?`<span>${A.icon('income',16)}Te deben <b>${A.money(receivable)}</b></span>`:''}</div>`:''}
       </section>
+      ${A.market?A.market.widgetMarkup():''}
       <section class="card dashboard-chart" id="dashboard-chart-card">${D.chartMarkup()}</section>
       ${goals.length?`<section class="card dashboard-section compact-goals">${A.ui.sectionTitle('Objetivos activos','Progreso de tus metas','<button class="text-button" data-action="open-tool" data-tool="goals">Ver objetivos</button>')}<div class="goal-mini-list">${goals.map(goal=>`<button data-action="open-goal" data-id="${goal.id}"><span>${A.icon('target',18)}</span><div><b>${A.escape(goal.name)}</b><div class="progress-track"><i style="width:${A.goals.progress(goal)}%"></i></div></div><strong>${Math.round(A.goals.progress(goal))}%</strong></button>`).join('')}</div></section>`:''}
       <section class="card dashboard-section">

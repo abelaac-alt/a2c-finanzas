@@ -5,6 +5,7 @@
 
   R.toolTabs=[
     ['statistics','chart','Estadísticas'],
+    ['investment','investment','Inversión'],
     ['resources','piggy','Huchas'],
     ['goals','target','Objetivos'],
     ['scheduled','calendar','Pendientes'],
@@ -13,8 +14,8 @@
 
   R.renderTools=()=>`${A.ui.header('Herramientas','Control y planificación','Analiza tus datos y organiza tus finanzas')}
     <div class="tool-tabs">${R.toolTabs.map(([key,icon,label])=>`<button class="tool-tab ${A.state.tool===key?'active':''}" data-action="select-tool" data-tool="${key}">${A.icon(icon,18)}<span>${label}</span></button>`).join('')}</div>
-    <section class="tool-content">${A.state.tool==='statistics'?A.statistics.render():A.state.tool==='resources'?R.render():A.state.tool==='goals'?A.goals.render():A.state.tool==='scheduled'?A.scheduled.render():A.budgets.render()}</section>`;
-  R.afterTools=()=>{if(A.state.tool==='statistics')A.statistics.afterRender();};
+    <section class="tool-content">${A.state.tool==='statistics'?A.statistics.render():A.state.tool==='investment'?A.market.render():A.state.tool==='resources'?R.render():A.state.tool==='goals'?A.goals.render():A.state.tool==='scheduled'?A.scheduled.render():A.budgets.render()}</section>`;
+  R.afterTools=()=>{if(A.state.tool==='statistics')A.statistics.afterRender();if(A.state.tool==='investment')A.market.afterRender();else A.market?.disposeChart();};
 
   R.visibleRows=()=>A.state.resources.filter(row=>row.type!=='goal'&&!row.archived_at);
   R.modeLabel=row=>row.type==='piggy'?(row.piggy_mode==='liquidity'?'Liquidez':'Ahorro'):'Carpeta';

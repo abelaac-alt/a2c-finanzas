@@ -1,7 +1,11 @@
-const CACHE='a2c-v83-830';
-const ASSETS=['./','./index.html','./styles.css','./config.js','./manifest.webmanifest','./logo-a2c.png','./icon-192.png','./icon-512.png','./src/core.js','./src/store.js','./src/ui.js','./src/auth.js','./src/transactions.js','./src/scheduled.js','./src/statistics.js','./src/budgets.js','./src/goals.js','./src/resources.js','./src/dashboard.js','./src/messages.js','./src/profile.js','./src/native.js','./src/app.js'];
+const CACHE='a2c-v84-840';
+const ASSETS=['./','./index.html','./styles.css','./config.js','./manifest.webmanifest','./logo-a2c.png','./icon-192.png','./icon-512.png','./src/core.js','./src/store.js','./src/ui.js','./src/auth.js','./src/transactions.js','./src/scheduled.js','./src/statistics.js','./src/budgets.js','./src/goals.js','./src/resources.js','./src/market.js','./src/dashboard.js','./src/messages.js','./src/profile.js','./src/native.js','./src/app.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+self.addEventListener('notificationclick',event=>{
+  event.notification.close();
+  event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{const client=list.find(item=>'focus' in item);if(client){client.navigate?.('./#tools');return client.focus();}return self.clients.openWindow('./#tools');}));
+});
 self.addEventListener('fetch',event=>{
   if(event.request.method!=='GET')return;
   const url=new URL(event.request.url);
