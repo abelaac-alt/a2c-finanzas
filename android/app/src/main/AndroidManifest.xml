@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:name=".A2CApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.A2C">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".payments.PaymentSettingsActivity"
+            android:exported="false"
+            android:label="@string/payments_title"
+            android:theme="@style/Theme.A2C.Settings" />
+
+        <!-- Detección de pagos a partir de notificaciones de bancos y carteras -->
+        <service
+            android:name=".payments.PaymentListenerService"
+            android:exported="false"
+            android:label="@string/payments_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <receiver android:name=".payments.PaymentActionReceiver" android:exported="false" />
+
+        <!-- Widgets de la pantalla de inicio -->
+        <receiver android:name=".widgets.BalanceWidget" android:exported="false" android:label="@string/widget_balance">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_balance_info" />
+        </receiver>
+        <receiver android:name=".widgets.GoalsWidget" android:exported="false" android:label="@string/widget_goals">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_goals_info" />
+        </receiver>
+        <receiver android:name=".widgets.StocksWidget" android:exported="false" android:label="@string/widget_stocks">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_stocks_info" />
+        </receiver>
+    </application>
+</manifest>

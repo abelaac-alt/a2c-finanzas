@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icono monocromo de notificación: línea de tendencia sobre una barra base -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFFFF" android:strokeWidth="2.2"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M3,16 L9,10 L13,14 L21,6 M15,6 L21,6 L21,12" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M3,19.5h18v1.8h-18z" />
+</vector>

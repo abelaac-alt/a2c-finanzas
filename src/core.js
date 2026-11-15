@@ -15,8 +15,14 @@
 
   if(!window.supabase?.createClient)throw new Error('No se pudo cargar Supabase.');
   if(!A.config.SUPABASE_URL||!A.config.SUPABASE_ANON_KEY)throw new Error('Falta la configuración de Supabase.');
+  // En la app Android la sesión se guarda en el almacenamiento nativo, compartido con widgets y alertas en segundo plano.
+  const nativeAuthStorage=window.A2CNative?.authStorageGet?{
+    getItem:key=>window.A2CNative.authStorageGet(key)??null,
+    setItem:(key,value)=>window.A2CNative.authStorageSet(key,String(value)),
+    removeItem:key=>window.A2CNative.authStorageRemove(key)
+  }:undefined;
   A.sb=window.supabase.createClient(A.config.SUPABASE_URL,A.config.SUPABASE_ANON_KEY,{
-    auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true},
+    auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,...(nativeAuthStorage?{storage:nativeAuthStorage}:{})},
     global:{headers:{'x-client-info':'a2c-finanzas-8'}}
   });
 

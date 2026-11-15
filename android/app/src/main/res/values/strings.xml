@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">A2C Finanzas</string>
+
+    <string name="widget_balance">A2C · Saldo</string>
+    <string name="widget_balance_label">Saldo disponible</string>
+    <string name="widget_month_saving">Ahorro del mes</string>
+    <string name="widget_piggies">En huchas</string>
+    <string name="widget_goals">Objetivos</string>
+    <string name="widget_goals_empty">Sin objetivos activos. Elige cuáles mostrar en Herramientas › Objetivos › Widget.</string>
+    <string name="widget_stocks">Mis acciones</string>
+    <string name="widget_stocks_empty">Elige acciones con «Mostrar en Inicio» en Herramientas › Inversión.</string>
+    <string name="widget_updated">%1$s</string>
+    <string name="widget_loading">Actualizando…</string>
+    <string name="widget_login">Abre A2C</string>
+    <string name="widget_balance_desc">Saldo disponible y ahorro del mes</string>
+    <string name="widget_goals_desc">Progreso de hasta tres objetivos</string>
+    <string name="widget_stocks_desc">Cotizaciones de las acciones que elijas</string>
+
+    <string name="channel_market">Alertas de bolsa</string>
+    <string name="channel_market_desc">Avisos cuando una acción sube o baja según tus alertas.</string>
+    <string name="channel_payments">Pagos detectados</string>
+    <string name="channel_payments_desc">Pagos con tarjeta detectados para registrarlos en A2C.</string>
+    <string name="channel_general">General</string>
+
+    <string name="file_saved">Archivo guardado.</string>
+    <string name="file_save_error">No se pudo guardar el archivo.</string>
+    <string name="file_picker_error">No hay ninguna aplicación para elegir archivos.</string>
+    <string name="link_error">No se pudo abrir el enlace.</string>
+
+    <string name="payments_title">Detección de pagos</string>
+    <string name="payments_listener_label">A2C · Detección de pagos</string>
+    <string name="payment_registered">Pago registrado en A2C.</string>
+    <string name="payment_duplicate">Ese pago ya estaba registrado.</string>
+    <string name="payment_error">No se pudo registrar el pago.</string>
+    <string name="payment_not_found">El pago ya no está pendiente.</string>
+    <string name="payment_register">Registrar</string>
+    <string name="payment_discard">Descartar</string>
+    <string name="payment_detected_title">Pago detectado · %1$s</string>
+</resources>

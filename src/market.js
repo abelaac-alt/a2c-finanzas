@@ -17,11 +17,11 @@
   const M=A.market={quotes:new Map(),chartCache:new Map(),selected:null,range:'1mo',chartType:'area',lastFetch:0,loading:false,loadingPromise:null,error:'',serverOk:null,timer:null,chart:null,mode:''};
 
   M.settings=()=>({provider:'auto',twelveKey:'',interval:5,notify:true,...read(KEYS.settings,{})});
-  M.saveSettings=settings=>write(KEYS.settings,settings);
+  M.saveSettings=settings=>{write(KEYS.settings,settings);M.syncNativeConfig();};
   M.watchlist=()=>read(KEYS.watch,[]);
   M.saveWatchlist=list=>{write(KEYS.watch,list);M.syncNative();};
   M.alerts=()=>read(KEYS.alerts,[]);
-  M.saveAlerts=list=>write(KEYS.alerts,list);
+  M.saveAlerts=list=>{write(KEYS.alerts,list);M.syncNativeConfig();};
   M.log=()=>read(KEYS.log,[]);
   M.pushLog=entry=>write(KEYS.log,[entry,...M.log()].slice(0,30));
 
@@ -135,9 +135,9 @@
     });
     if(changed)M.saveAlerts(alerts);
   };
-  M.permission=()=>window.A2CNative?.showNotification?'native':('Notification' in window?Notification.permission:'unsupported');
+  M.permission=()=>window.A2CNative?.showNotification?(window.A2CNative.notificationsEnabled?.()===false?'native-off':'native'):('Notification' in window?Notification.permission:'unsupported');
   M.requestPermission=async()=>{
-    if(window.A2CNative?.showNotification){A.toast('Las alertas se enviarán como notificaciones de Android.');return 'native';}
+    if(window.A2CNative?.showNotification){if(window.A2CNative.notificationsEnabled?.()===false){window.A2CNative.requestNotificationPermission?.();return 'native-off';}A.toast('Las alertas se enviarán como notificaciones de Android.');return 'native';}
     if(!('Notification' in window)){A.toast('Este dispositivo no admite notificaciones del navegador. Las alertas se mostrarán dentro de la aplicación.',true);return 'unsupported';}
     const result=await Notification.requestPermission();
     A.toast(result==='granted'?'Notificaciones activadas.':'No se han concedido permisos de notificación.',result!=='granted');
@@ -157,6 +157,20 @@
     if(!window.A2CNative?.saveStockWidget)return;
     const rows=M.watchlist().filter(row=>row.home).map(row=>{const q=M.quotes.get(row.symbol)||{};return {symbol:row.symbol,name:row.name,price:q.price??null,changePct:q.changePct??null,currency:q.currency||row.currency||''};});
     try{window.A2CNative.saveStockWidget(JSON.stringify(rows));window.A2CNative.refreshStockWidget?.();}catch(error){console.warn(error);}
+  };
+  /** La app Android comprueba las alertas y actualiza el widget con la app cerrada: necesita alertas y proveedor. */
+  M.syncNativeConfig=()=>{
+    if(!window.A2CNative?.saveStockAlerts)return;
+    try{const s=M.settings();window.A2CNative.saveStockAlerts(JSON.stringify(M.alerts()));window.A2CNative.saveMarketSettings?.(JSON.stringify({provider:s.provider,twelveKey:s.twelveKey}));}catch(error){console.warn(error);}
+  };
+  /** Marca como saltadas las alertas que Android notificó mientras la app estaba cerrada. */
+  M.consumeNativeAlerts=()=>{
+    if(!window.A2CNative?.consumeTriggeredAlerts)return;
+    let triggered=[];try{triggered=JSON.parse(window.A2CNative.consumeTriggeredAlerts()||'[]');}catch(error){return;}
+    if(!triggered.length)return;
+    const alerts=M.alerts();
+    triggered.forEach(item=>{const alert=alerts.find(row=>row.id===item.id);if(!alert||!alert.active)return;alert.active=false;alert.triggeredAt=item.at||Date.now();alert.triggerPrice=item.price;const rising=alert.type==='above'||alert.type==='up';M.pushLog({id:A.unique('log'),symbol:alert.symbol,title:`${alert.symbol} ${rising?'sube':'baja'} · ${M.price(item.price,M.quotes.get(alert.symbol)?.currency||M.watchlist().find(row=>row.symbol===alert.symbol)?.currency)}`,body:`${M.alertLabel(alert)}. Aviso enviado con la app cerrada.`,at:item.at||Date.now(),tone:rising?'up':'down'});});
+    M.saveAlerts(alerts);M.updateViews();
   };
 
   /* ---------- Piezas de interfaz ---------- */
@@ -222,8 +236,8 @@
   };
   M.alertsMarkup=()=>{
     const alerts=M.alerts();const log=M.log().slice(0,8);const permission=M.permission();
-    const permissionText={granted:'Notificaciones del sistema activadas.',native:'Las alertas llegan como notificaciones de Android.',denied:'Las notificaciones están bloqueadas en este navegador; las alertas se verán dentro de la app.',default:'Permite las notificaciones para recibir avisos aunque estés en otra pantalla.',unsupported:'Este dispositivo no admite notificaciones del navegador; las alertas se verán dentro de la app.'}[permission];
-    return `<div id="market-alerts"><div class="info-strip market-permission">${A.escape(permissionText)}${permission==='default'?' <button class="text-button" data-action="market-permission">Permitir</button>':''}</div>
+    const permissionText={granted:'Notificaciones del sistema activadas.',native:'Las alertas llegan como notificaciones de Android, también con la app cerrada (se comprueban cada 15 minutos).','native-off':'Las notificaciones de A2C están desactivadas en Android.',denied:'Las notificaciones están bloqueadas en este navegador; las alertas se verán dentro de la app.',default:'Permite las notificaciones para recibir avisos aunque estés en otra pantalla.',unsupported:'Este dispositivo no admite notificaciones del navegador; las alertas se verán dentro de la app.'}[permission];
+    return `<div id="market-alerts"><div class="info-strip market-permission">${A.escape(permissionText)}${permission==='default'||permission==='native-off'?' <button class="text-button" data-action="market-permission">Permitir</button>':''}</div>
       ${alerts.length?`<div class="market-alert-list">${alerts.map(alert=>`<div class="market-alert ${alert.active?'':'done'}"><span class="market-alert-icon ${alert.type==='above'||alert.type==='up'?'up':'down'}">${A.icon(alert.type==='above'||alert.type==='up'?'income':'expense',16)}</span><div><strong>${A.escape(alert.symbol)}</strong><small>${A.escape(M.alertLabel(alert))}${alert.active?'':` · saltó ${new Date(alert.triggeredAt).toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}`}</small></div>${alert.active?'<span class="status-pill">Activa</span>':`<button class="btn tiny secondary" data-action="market-rearm-alert" data-id="${alert.id}">Reactivar</button>`}<button class="icon-action" data-action="market-delete-alert" data-id="${alert.id}" aria-label="Eliminar alerta">${A.icon('trash',15)}</button></div>`).join('')}</div>`:A.ui.empty('No hay alertas','Crea una alerta para que A2C te avise cuando un valor suba o baje.')}
       ${log.length?`<details class="market-log"><summary>Últimos avisos (${log.length})</summary>${log.map(entry=>`<div class="market-log-row"><b class="${entry.tone}">${A.escape(entry.title)}</b><small>${new Date(entry.at).toLocaleString('es-ES')} · ${A.escape(entry.body)}</small></div>`).join('')}</details>`:''}</div>`;
   };
@@ -357,7 +371,7 @@
       const q=M.quotes.get(alert.symbol);
       if(q&&M.alertMatches(alert,q)&&!confirm('La condición ya se cumple con el precio actual y la alerta saltará enseguida. ¿Crearla igualmente?'))return;
       M.saveAlerts([...M.alerts(),alert]);A.closeModal();A.toast('Alerta creada.');
-      if(M.permission()==='default')await M.requestPermission();
+      if(['default','native-off'].includes(M.permission()))await M.requestPermission();
       M.checkAlerts();M.updateViews();
     });
   };
@@ -374,7 +388,7 @@
     form.addEventListener('submit',async event=>{event.preventDefault();
       const next={provider:form.elements.provider.value,twelveKey:String(form.elements.twelveKey.value||'').trim(),interval:Number(form.elements.interval.value)||5,notify:form.elements.notify.checked};
       M.saveSettings(next);M.serverOk=null;M.error='';M.chartCache.clear();M.quotes.clear();M.lastFetch=0;A.closeModal();M.startTimer();
-      if(next.notify&&M.permission()==='default')await M.requestPermission();
+      if(next.notify&&['default','native-off'].includes(M.permission()))await M.requestPermission();
       M.updateViews();await M.refresh({force:true});A.toast('Fuente de datos guardada.');
     });
   };
@@ -398,6 +412,7 @@
   A.ui.action('market-rearm-alert',({data})=>{const alerts=M.alerts();const alert=alerts.find(row=>row.id===data.id);if(alert){alert.active=true;delete alert.triggeredAt;M.saveAlerts(alerts);M.checkAlerts();M.updateViews();A.toast('Alerta reactivada.');}});
 
   /* ---------- Arranque ---------- */
-  window.addEventListener('a2c:ready',()=>{M.startTimer();if(M.watchlist().length)M.refresh({force:true});});
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&A.state.user&&M.watchlist().length)M.refresh();});
+  window.addEventListener('a2c:ready',()=>{M.consumeNativeAlerts();M.syncNativeConfig();M.syncNative();M.startTimer();if(M.watchlist().length)M.refresh({force:true});});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)return;M.consumeNativeAlerts();if(A.state.user&&M.watchlist().length)M.refresh();});
+  window.addEventListener('a2c:native-permission',()=>M.updateViews());
 })();

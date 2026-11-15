@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.A2C" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">@color/accent</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/surface</item>
+        <item name="android:statusBarColor">@color/surface</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <style name="Theme.A2C.Settings" parent="android:Theme.Material.Light">
+        <item name="android:colorPrimary">@color/surface</item>
+        <item name="android:colorPrimaryDark">@color/surface</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/surface</item>
+        <item name="android:actionBarStyle">@style/A2C.ActionBar</item>
+    </style>
+    <style name="A2C.ActionBar" parent="android:Widget.Material.Light.ActionBar.Solid">
+        <item name="android:background">@color/surface</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:titleTextStyle">@style/A2C.ActionBar.Title</item>
+    </style>
+    <style name="A2C.ActionBar.Title" parent="android:TextAppearance.Material.Widget.ActionBar.Title">
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- Widgets -->
+    <style name="Widget.A2C.Root" parent="">
+        <item name="android:orientation">vertical</item>
+        <item name="android:background">@drawable/widget_bg</item>
+        <item name="android:padding">14dp</item>
+    </style>
+    <style name="Widget.A2C.Title" parent="">
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:maxLines">1</item>
+    </style>
+    <style name="Widget.A2C.Strong" parent="">
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+    </style>
+    <style name="Widget.A2C.Small" parent="">
+        <item name="android:textColor">@color/muted</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+    <style name="Widget.A2C.Change" parent="">
+        <item name="android:textColor">@color/muted</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+    </style>
+</resources>
