@@ -1,0 +1,19 @@
+# Firma de Android: NUNCA subir a GitHub
+android/keystore.properties
+firma-a2c/
+*.p12
+*.jks
+*.keystore
+
+# Compilación de Android
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+.gradle/
+*.apk
+*.aab
+
+# Sistema
+.DS_Store
+Thumbs.db

@@ -1,0 +1,81 @@
+name: APK Android
+
+# Compila el APK firmado con TU clave (la de siempre), así se instala encima de la app que ya tienes.
+# Necesita 3 secretos en GitHub (Settings › Secrets and variables › Actions):
+#   A2C_KEYSTORE_BASE64  el archivo a2c-release.p12 en base64
+#   A2C_STORE_PASSWORD   la contraseña de la clave
+#   A2C_KEY_ALIAS        el alias (normalmente: a2c)
+# Ver android/LEEME.md › "Opción 1 · GitHub Actions".
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "src/**"
+      - "index.html"
+      - "styles.css"
+      - "config.js"
+      - ".github/workflows/android-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprobar secretos de firma
+        env:
+          KEYSTORE: ${{ secrets.A2C_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.A2C_STORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ] || [ -z "$PASSWORD" ]; then
+            echo "::error::Faltan los secretos A2C_KEYSTORE_BASE64 y/o A2C_STORE_PASSWORD. Mira android/LEEME.md."
+            exit 1
+          fi
+
+      - name: Restaurar la clave de firma
+        env:
+          KEYSTORE: ${{ secrets.A2C_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE" | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/a2c-release.p12"
+          echo "A2C_STORE_FILE=$RUNNER_TEMP/a2c-release.p12" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Compilar APK firmado
+        working-directory: android
+        env:
+          A2C_STORE_PASSWORD: ${{ secrets.A2C_STORE_PASSWORD }}
+          A2C_KEY_ALIAS: ${{ secrets.A2C_KEY_ALIAS }}
+          A2C_KEY_PASSWORD: ${{ secrets.A2C_KEY_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --console=plain
+
+      - name: Verificar firma
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          SIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$SIGNER" verify --print-certs "$APK" | head -3
+          VERSION=$(grep -m1 'versionName' android/app/build.gradle.kts | sed -E 's/.*"(.*)".*/\1/')
+          cp "$APK" "A2C-Finanzas-$VERSION.apk"
+          rm -f "$RUNNER_TEMP/a2c-release.p12"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: A2C-Finanzas-APK
+          path: A2C-Finanzas-*.apk
+          retention-days: 30

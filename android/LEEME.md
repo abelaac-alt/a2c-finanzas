@@ -14,21 +14,38 @@ Proyecto Android nativo (Kotlin) que empaqueta la web de A2C Finanzas y añade l
 
 ## Cómo obtener el APK
 
-### Opción 1 · GitHub Actions (sin instalar nada)
-1. Sube el repositorio completo a GitHub (incluidas las carpetas `android/` y `.github/`).
-   **No subas** `android/keystore.properties` ni la carpeta `firma-a2c` (el `.gitignore` ya los excluye).
-2. En GitHub: *Settings › Secrets and variables › Actions › New repository secret*, crea los tres secretos
-   que indica `firma-a2c/LEEME-FIRMA.txt` (`A2C_KEYSTORE_BASE64`, `A2C_STORE_PASSWORD`, `A2C_KEY_ALIAS`).
-3. Pestaña *Actions › APK Android › Run workflow*. Al terminar (≈5 min), descarga el artefacto
-   **A2C-Finanzas-APK**, descomprímelo y pasa el `.apk` al móvil.
+### Opción 1 · GitHub Actions (sin instalar nada, firmado con TU clave)
+El workflow `.github/workflows/android-apk.yml` compila el APK firmado con tu clave de siempre,
+así se instala **encima** de la app que ya tienes sin perder nada.
 
-Cada vez que subas cambios a `main` se compila solo.
+**Una sola vez — crear los secretos:**
+1. En tu PC, abre **PowerShell** y convierte tu clave a texto (base64):
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\Users\Abel\Desktop\ARCHIVO DE CUENTA APP\firma-a2c\a2c-release.p12")) | Set-Clipboard
+   ```
+   El resultado queda copiado en el portapapeles.
+2. En GitHub: repositorio › *Settings › Secrets and variables › Actions › New repository secret*. Crea:
+
+   | Nombre | Valor |
+   |---|---|
+   | `A2C_KEYSTORE_BASE64` | lo que copiaste en el paso 1 (pégalo) |
+   | `A2C_STORE_PASSWORD` | la contraseña de tu clave |
+   | `A2C_KEY_ALIAS` | `a2c` |
+
+**Cada vez que quieras un APK:**
+1. Pestaña *Actions › APK Android › Run workflow* (también se ejecuta solo al subir cambios a `main`).
+2. Al terminar (≈5 min), abre la ejecución y descarga el artefacto **A2C-Finanzas-APK**.
+3. Descomprímelo y pasa el `.apk` al móvil.
+
+> La firma **nunca** debe estar en el repositorio: `android/keystore.properties`, la carpeta `firma-a2c`
+> y los archivos `.p12` están en `.gitignore`. Usa `android/keystore.properties.example` como plantilla local.
 
 ### Opción 2 · Android Studio
 1. Instala Android Studio y abre la carpeta `android/`.
-2. Espera a que sincronice Gradle y pulsa *Build › Build App Bundle(s) / APK(s) › Build APK(s)*
-   con la variante *release*. La firma se toma de `android/keystore.properties`.
-3. El APK queda en `android/app/build/outputs/apk/release/`.
+2. Copia `keystore.properties.example` como `keystore.properties` (si no lo tienes ya) y pon la ruta y contraseña de tu clave.
+3. Espera a que sincronice Gradle y pulsa *Build › Build App Bundle(s) / APK(s) › Build APK(s)*
+   con la variante *release*.
+4. El APK queda en `android/app/build/outputs/apk/release/`.
 
 ## Instalar en el móvil
 1. Abre el `.apk` en el móvil y permite «Instalar apps desconocidas» para el explorador de archivos o el navegador.
