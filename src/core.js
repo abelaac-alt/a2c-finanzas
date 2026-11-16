@@ -1,7 +1,7 @@
 (function(){
   'use strict';
   const A=window.A2C=window.A2C||{};
-  A.VERSION='8.2.0';
+  A.VERSION='9.0.0';
   A.platform=window.A2CNative?'android':'web';
   A.config=window.A2C_CONFIG||{};
   A.root=document.querySelector('#app');

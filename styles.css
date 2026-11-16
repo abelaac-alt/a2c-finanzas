@@ -860,3 +860,19 @@ b,strong{font-weight:600}
 @media(max-width:380px){.market-row{grid-template-columns:minmax(0,1fr) auto}.market-row .market-spark{display:none}}
 
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+
+/* A2C 9.0 · Tickets por Telegram */
+.tg-loading{display:flex;flex-direction:column;align-items:center;gap:10px;padding:28px 0;color:var(--muted,#667)}
+.tg-status{display:flex;gap:12px;align-items:flex-start;padding:14px;border:1px solid var(--line,#e5e7eb);border-radius:var(--r,14px);background:var(--surface,#fff);margin-bottom:14px}
+.tg-status>span{flex:0 0 auto;display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:var(--accent-soft,#eef4ff);color:var(--accent,#2563eb)}
+.tg-status.ok>span{background:#e8f7ee;color:#15803d}
+.tg-status strong,.tg-status small{display:block}
+.tg-status small{color:var(--muted,#667);margin-top:3px;line-height:1.4}
+.tg-steps{margin:0 0 16px;padding-left:20px;display:grid;gap:8px;line-height:1.45}
+.tg-code{display:grid;gap:8px;padding:14px;border:1px dashed var(--accent-line,#93c5fd);border-radius:var(--r,14px);background:var(--accent-soft,#eef4ff);margin-bottom:10px}
+.tg-code code{font-size:1.05rem;font-weight:700;letter-spacing:.04em;padding:8px 10px;border-radius:10px;background:var(--surface,#fff);user-select:all;word-break:break-all}
+.tg-code small{color:var(--muted,#667)}
+.tg-alert{display:flex;gap:10px;padding:12px 14px;border-radius:var(--r,14px);background:#fff4e5;color:#7c4a03;margin-bottom:14px}
+.tg-alert b,.tg-alert small{display:block}
+.tg-alert small{margin-top:4px;line-height:1.4}
+#tg-body a.btn{text-decoration:none}

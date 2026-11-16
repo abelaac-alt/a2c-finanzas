@@ -6,6 +6,7 @@
     <section class="profile-card">${A.avatar(profile)}<div><strong>${A.escape(profile.display_name||profile.username||profile.email||'Usuario')}</strong><small>@${A.escape(profile.username||'sin-usuario')} · ${A.escape(profile.email||'')}</small></div><button class="btn small secondary" data-action="edit-profile">${A.icon('edit',15)} Editar</button></section>
     <section class="settings-grid">
       <button class="setting-card" data-action="open-notifications"><span>${A.icon('bell',22)}</span><div><strong>Notificaciones</strong><small>${pending} aviso${pending===1?'':'s'} sin leer</small></div>${A.icon('chevron',18)}</button>
+      <button class="setting-card" data-action="open-telegram"><span>${A.icon('send',22)}</span><div><strong>Telegram</strong><small>Registra gastos enviando la foto del ticket</small></div>${A.icon('chevron',18)}</button>
       ${window.A2CNative?`<button class="setting-card" data-action="native-settings"><span>${A.icon('wallet',22)}</span><div><strong>Detección de pagos</strong><small>Permisos, diagnóstico y pruebas</small></div>${A.icon('chevron',18)}</button>`:''}
       <button class="setting-card" data-action="export-backup"><span>${A.icon('expense',22)}</span><div><strong>Exportar copia</strong><small>Descarga tus datos en JSON</small></div>${A.icon('chevron',18)}</button>
       <button class="setting-card" data-action="choose-backup"><span>${A.icon('income',22)}</span><div><strong>Importar copia</strong><small>Restaura movimientos y herramientas</small></div>${A.icon('chevron',18)}</button>
