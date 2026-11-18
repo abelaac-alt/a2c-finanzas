@@ -1,0 +1,21 @@
+{
+  "name": "a2c-finanzas-video",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Videos de A2C Finanzas creados con Remotion",
+  "scripts": {
+    "dev": "remotion studio",
+    "render": "remotion render",
+    "upgrade": "remotion upgrade"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.544",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.544"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}
